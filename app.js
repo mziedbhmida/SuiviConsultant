@@ -667,17 +667,20 @@ function dayModal(mid, t) {
     <label class="f">Appliquer jusqu'au (inclus)<input type="date" id="dUntil" value="${iso(t)}" min="${iso(t)}"></label>
     <div class="row-actions">${pp.explicit ? `<button type="button" class="btn" id="dReset">Revenir aux missions récurrentes</button>` : "<span></span>"}<div class="r"><button type="button" class="btn" id="dCancel">Annuler</button><button class="btn primary" type="submit" id="dSave">Enregistrer</button></div></div>
   </form>`);
-  const draw = () => {
-    $("dRows").innerHTML = rows.length ? rows.map((r, i) => `<li class="drow"><select data-ri="${i}" class="dM" aria-label="Mission">${missionOptions(list, r.mission)}</select><input type="number" class="dP" data-ri="${i}" min="5" max="100" step="5" value="${r.pct}" aria-label="Pourcentage de la journée"><button type="button" class="btn small" data-rdel="${i}" aria-label="Retirer">✕</button></li>`).join("") : `<li class="empty-note">Journée libre : aucune mission ce jour-là.</li>`;
+  const drawTotal = () => {
     const abs = rows.filter(r => (missionById(r.mission) || {}).type === "ABSENCE").reduce((s, r) => s + (+r.pct || 0), 0);
     const work = rows.filter(r => (missionById(r.mission) || {}).type !== "ABSENCE").reduce((s, r) => s + (+r.pct || 0), 0);
     const load = abs >= 100 ? null : work / (100 - abs);
     $("dTotal").innerHTML = abs >= 100 ? "Absent toute la journée" : `Charge : <strong style="color:${load > 1.001 ? "var(--bad)" : load >= .85 ? "var(--good)" : "inherit"}">${pct(load)}</strong>${abs ? ` · absence ${abs} %` : ""}`;
   };
+  const draw = () => {
+    $("dRows").innerHTML = rows.length ? rows.map((r, i) => `<li class="drow"><select data-ri="${i}" class="dM" aria-label="Mission">${missionOptions(list, r.mission)}</select><input type="number" class="dP" data-ri="${i}" min="1" max="100" step="1" value="${r.pct}" aria-label="Pourcentage de la journée"><button type="button" class="btn small" data-rdel="${i}" aria-label="Retirer">✕</button></li>`).join("") : `<li class="empty-note">Journée libre : aucune mission ce jour-là.</li>`;
+    drawTotal();
+  };
   draw();
   const form = $("dForm");
-  form.addEventListener("input", e => { const i = +e.target.dataset.ri; if (isNaN(i)) return; if (e.target.classList.contains("dM")) rows[i].mission = e.target.value; if (e.target.classList.contains("dP")) rows[i].pct = Math.max(0, Math.min(100, +e.target.value || 0)); draw(); });
-  form.addEventListener("change", e => { if (e.target.classList.contains("dM")) { rows[+e.target.dataset.ri].mission = e.target.value; draw(); } });
+  form.addEventListener("input", e => { const i = +e.target.dataset.ri; if (isNaN(i)) return; if (e.target.classList.contains("dM")) rows[i].mission = e.target.value; if (e.target.classList.contains("dP")) rows[i].pct = Math.max(0, Math.min(100, +e.target.value || 0)); drawTotal(); });
+  form.addEventListener("change", e => { const i = +e.target.dataset.ri; if (isNaN(i)) return; if (e.target.classList.contains("dM")) rows[i].mission = e.target.value; if (e.target.classList.contains("dP")) { rows[i].pct = Math.max(0, Math.min(100, +e.target.value || 0)); e.target.value = rows[i].pct; } drawTotal(); });
   form.addEventListener("click", e => { const b = e.target.closest("[data-rdel]"); if (b) { rows.splice(+b.dataset.rdel, 1); draw(); } });
   $("dAdd").onclick = () => { const firstWork = list.find(x => x.type !== "ABSENCE" && !rows.some(r => r.mission === x.id)) || list[0]; rows.push({ mission: firstWork.id, pct: 50 }); draw(); };
   $("qAbs").onclick = () => { rows = [{ mission: absM.id, pct: 100 }]; draw(); };
@@ -731,7 +734,7 @@ function assignModal({ memberId, aId, missionId, absence, pickMember }) {
     ${absence ? "" : `<p class="express" id="aSummary"></p>`}
     <details class="adv" id="aAdv" ${advOpen ? "open" : ""}>${absence ? "" : `<summary>Temps partiel, jours ou dates différents</summary>`}
     <div class="form-grid">
-      <div class="full"><span class="eyebrow">${absence ? "Durée" : "Temps passé chaque jour"}</span><div class="pcts" id="aPcts">${presets.map(([v, l]) => `<button type="button" data-p="${v}" aria-pressed="${cur.pct === v}">${l}</button>`).join("")}<input type="number" id="aPct" min="5" max="100" step="5" value="${cur.pct}" aria-label="Pourcentage personnalisé"> %</div></div>
+      <div class="full"><span class="eyebrow">${absence ? "Durée" : "Temps passé chaque jour"}</span><div class="pcts" id="aPcts">${presets.map(([v, l]) => `<button type="button" data-p="${v}" aria-pressed="${cur.pct === v}">${l}</button>`).join("")}<input type="number" id="aPct" min="1" max="100" step="1" value="${cur.pct}" aria-label="Pourcentage personnalisé"> %</div></div>
       <div class="full"><span class="eyebrow">Jours concernés</span><div class="wds" id="aWds">${ALL_WD.map(i => `<button type="button" data-wd="${i}" aria-pressed="${cur.wd.includes(i)}" title="${WD_SHORT[i - 1]}">${WD[i - 1]}</button>`).join("")}</div></div>
       <label class="f">À partir du<input type="date" id="aStart" value="${esc(cur.start)}" required></label>
       <div class="full radios"><span class="eyebrow">Jusqu'à</span>
