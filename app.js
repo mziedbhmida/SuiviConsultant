@@ -25,7 +25,7 @@ const HORIZONS = [3, 8, 12];
 
 const state = {
   tab: null, h: 3, prob: true, group: "", filter: "", mFilter: "actives",
-  planMember: null, planOffset: 0,
+  planMember: null, planOffset: 0, weekOffset: 0,
   me: { id: null, email: "", isAdmin: false },
   members: [], groups: [], claims: [], missions: [], assign: [], entries: [], status: {}, admins: [],
   consultants: [], loaded: false
@@ -106,8 +106,8 @@ function reindex() {
 }
 /* Ce que fait un consultant un jour donné : ajustement du jour s'il existe, sinon ses affectations récurrentes.
    Les absences récurrentes suspendent les missions au prorata. */
-function partsFor(mid, t) {
-  const ex = IDX.entries[mid + "|" + iso(t)];
+function partsFor(mid, t, ignoreEntries) {
+  const ex = ignoreEntries ? null : IDX.entries[mid + "|" + iso(t)];
   if (ex && ex.length) return { explicit: true, parts: ex.filter(e => e.mission_id && missionById(e.mission_id)).map(e => ({ m: missionById(e.mission_id), pct: +e.pct })) };
   const wd = wdIdx(t); const parts = [];
   for (const a of IDX.assign[mid] || []) {
@@ -342,9 +342,10 @@ function viewTeam() {
   const bar = `<div class="bar"><div class="controls">
       <select class="sel" id="gSel" aria-label="Groupe"><option value="">Toute l'équipe (${state.members.length})</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${state.group === g.id ? "selected" : ""}>${esc(g.name)} (${state.members.filter(m => m.group_id === g.id).length})</option>`).join("")}</select>
       <div class="seg" role="group" aria-label="Horizon">${HORIZONS.map(h => `<button data-h="${h}" aria-pressed="${state.h === h}">${h === 3 ? "3 sem. · par jour" : h + " sem."}</button>`).join("")}</div>
-      <label class="toggle"><input type="checkbox" id="optProb" ${state.prob ? "checked" : ""}> Inclure le probable</label></div>
+      ${isAdmin() ? `<label class="toggle"><input type="checkbox" id="optProb" ${state.prob ? "checked" : ""}> Inclure le probable</label>` : ""}</div>
     <span class="muted" style="font-size:.85rem">S${isoWeek(cols[0].t)} à S${isoWeek(last)}</span></div>`;
   if (!state.consultants.length) return bar + `<div class="panel state">Aucun consultant dans ce groupe.</div>`;
+  if (!isAdmin()) return `${bar}${renderHeat(cols)}`;
   return `${bar}${renderKpis(kpis())}<div class="grid2">${renderAlerts(alerts())}${renderChart(cols)}</div>${renderHeat(cols)}${renderFinderShell()}${renderAssignList()}`;
 }
 
@@ -403,13 +404,64 @@ function viewPlanning() {
   <section class="panel hello"><div><span class="eyebrow">${esc(groupName(m.group_id))} · ${esc(m.role || "")}</span><h2 style="font-size:1.4rem">${esc(m.name)}</h2>
     <p class="${stale ? "" : "muted"}" style="${stale ? "color:var(--warn)" : ""}">${freshTxt}${stale && !ro ? " Vérifie tes 3 prochaines semaines puis confirme." : ""}</p></div>
     ${ro ? "" : `<div class="actions"><button class="btn" id="btnConfirm">Confirmer le planning</button><button class="btn" id="btnAbsence">Poser une absence</button><button class="btn primary" id="btnAssign">+ Affecter à une mission</button></div>`}</section>
-  <section class="panel"><div class="panel-head"><h2>3 semaines au jour près</h2>
+  ${ro ? "" : weekCards(m)}
+  <section class="panel"><div class="panel-head"><h2>Vue sur 3 semaines</h2>
     <div class="navw"><span class="eyebrow">${d1(free)} j libres</span><button class="btn small" data-nav="-1" aria-label="Semaine précédente">←</button><button class="btn small" data-nav="0">Aujourd'hui</button><button class="btn small" data-nav="1" aria-label="Semaine suivante">→</button></div></div>
     <div class="scroll"><table class="dgrid"><thead>${head}</thead><tbody>${body}${emptyRow}${totalRow}</tbody></table></div>
     <p class="muted small">${ro ? "" : "Clique sur un jour pour l'ajuster (absence, demi-journée, autre mission). "}Les valeurs sont en % de la journée. Un point signale un jour ajusté manuellement.</p></section>
   <section class="panel"><div class="panel-head"><h2>Missions récurrentes</h2><span class="eyebrow">remplissent automatiquement le planning</span></div>
     <div class="scroll"><table class="list"><thead><tr><th>Mission</th><th>Type</th><th>Statut</th><th>Temps</th><th>Jours</th><th>Période</th><th>Fin dans</th><th></th></tr></thead><tbody>${assignRows(work, false) || `<tr><td colspan="8" class="empty-note">Aucune mission récurrente${ro ? "." : " : « + Affecter à une mission » pour en ajouter une."}</td></tr>`}</tbody></table></div></section>
   ${absn.length ? `<section class="panel"><div class="panel-head"><h2>Absences à venir</h2></div><div class="scroll"><table class="list"><thead><tr><th>Motif</th><th>Type</th><th></th><th>Temps</th><th>Jours</th><th>Période</th><th>Fin dans</th><th></th></tr></thead><tbody>${assignRows(absn, false)}</tbody></table></div></section>` : ""}`;
+}
+
+/* ================= « Ma semaine » : saisie en 1 clic ================= */
+const absenceMission = () => state.missions.find(x => x.type === "ABSENCE" && x.active !== false && x.name === "Congés / absence") || state.missions.find(x => x.type === "ABSENCE" && x.active !== false);
+function dayKind(r) {
+  if (!r.explicit) return "normal";
+  if (!r.parts.length) return "free";
+  const abs = r.parts.filter(p => p.m.type === "ABSENCE").reduce((s, p) => s + p.pct, 0);
+  if (abs >= 100) return "abs";
+  if (abs === 50) return "half";
+  return "custom";
+}
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+function weekCards(m) {
+  const mon = monday(TODAY) + state.weekOffset * 7 * DAY;
+  const absM = absenceMission();
+  const cards = [0, 1, 2, 3, 4].map(i => {
+    const t = mon + i * DAY; const title = cap(new Date(t).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", timeZone: "UTC" }));
+    if (!isWorkday(t)) return `<li class="wcard hol"><div class="wd"><span>${title}</span></div><p class="muted small">Jour férié</p></li>`;
+    const r = dayCell(m.id, t, true); const k = dayKind(r);
+    const lines = r.parts.length ? r.parts.map(p => `<li><i class="dot" style="background:${TYPES[p.m.type].color}"></i><span title="${esc(missionLabel(p.m))}">${esc(p.m.name)}</span><b>${Math.round(p.pct)} %</b></li>`).join("") : `<li class="muted">Libre</li>`;
+    const btn = (kind, label, dis) => `<button class="qbtn" data-qd="${t}" data-qk="${kind}" aria-pressed="${k === kind}" ${dis ? "disabled" : ""}>${label}</button>`;
+    const loadTxt = r.load == null ? "Absent" : Math.round(r.load * 100) + " %";
+    return `<li class="wcard ${t === TODAY ? "today" : ""} ${band(r)}"><div class="wd"><span>${title}</span><span class="mono">${loadTxt}</span></div><ul class="wparts">${lines}</ul>
+      <div class="qbtns">${btn("normal", "Comme prévu")}${btn("abs", "Absent", !absM)}${btn("half", "½ journée", !absM)}${btn("free", "Libre")}<button class="qbtn more" data-day="${t}">Autre…</button></div></li>`;
+  }).join("");
+  const label = state.weekOffset === 0 ? "Cette semaine" : state.weekOffset === 1 ? "Semaine prochaine" : `Semaine ${isoWeek(mon)}`;
+  return `<section class="panel"><div class="panel-head"><div><h2>${label}</h2><span class="muted small">S${isoWeek(mon)} · du ${frDate(mon)} au ${frDate(mon + 4 * DAY)} · un clic suffit</span></div>
+    <div class="navw"><button class="btn small" data-wnav="-1" aria-label="Semaine précédente">←</button><button class="btn small" data-wnav="0">Cette semaine</button><button class="btn small" data-wnav="1" aria-label="Semaine suivante">→</button></div></div>
+    <ul class="week">${cards}</ul></section>`;
+}
+async function quickDay(mid, t, kind, btn) {
+  const m = memberById(mid); if (!m || !canEditMember(m)) return;
+  let rows = null;
+  if (kind === "abs") { const a = absenceMission(); if (!a) return; rows = [{ mission: a.id, pct: 100 }]; }
+  else if (kind === "free") rows = [];
+  else if (kind === "half") {
+    const a = absenceMission(); if (!a) return;
+    const work = partsFor(mid, t, true).parts.filter(p => p.m.type !== "ABSENCE");
+    rows = [{ mission: a.id, pct: 50 }];
+    for (const p of work) { const v = Math.max(5, Math.round(p.pct / 2 / 5) * 5); const x = rows.find(r => r.mission === p.m.id); if (x) x.pct = Math.min(100, x.pct + v); else rows.push({ mission: p.m.id, pct: v }); }
+  }
+  if (btn) btn.disabled = true;
+  try {
+    await q(sb.from("day_entries").delete().eq("member_id", mid).eq("day", iso(t)));
+    if (rows) await q(sb.from("day_entries").insert(rows.length ? rows.map(r => ({ member_id: mid, day: iso(t), mission_id: r.mission, pct: r.pct })) : [{ member_id: mid, day: iso(t), mission_id: null, pct: 0 }]));
+    await touchStatus(mid, "updated_at");
+    toast({ normal: "Journée remise comme prévu", abs: "Absence enregistrée", half: "Demi-journée enregistrée", free: "Journée libre enregistrée" }[kind]);
+    await after();
+  } catch (err) { toast(errMsg(err)); if (btn && btn.isConnected) btn.disabled = false; }
 }
 
 /* ================= vue Missions (admin) ================= */
@@ -501,6 +553,7 @@ function render() {
   if (!state.loaded) { main().innerHTML = `<div class="state">Chargement du plan de charge…</div>`; return; }
   if (!state.tab) state.tab = isAdmin() ? "equipe" : "moi";
   if ((state.tab === "admin" || state.tab === "missions") && !isAdmin()) state.tab = "moi";
+  if (!isAdmin()) state.prob = true;
   if (state.group && !state.groups.some(g => g.id === state.group)) state.group = "";
   rebuild(); renderTabs(); renderChip();
   const ex = state.members.some(m => m.example) || state.missions.some(m => m.example); const ban = $("banner"); ban.hidden = !(ex && isAdmin());
@@ -650,11 +703,17 @@ function assignModal({ memberId, aId, missionId, absence, pickMember }) {
   if (!a && !absence) { const mm = missionById(cur.mission); if (mm && mm.start_date && parse(mm.start_date) > TODAY) cur.start = mm.start_date; }
   const presets = absence ? [[100, "Journée"], [50, "Demi-journée"]] : [[100, "100 %"], [80, "80 %"], [50, "50 %"], [20, "20 %"]];
   const endLbl = () => { const mm = missionById(cur.mission); return mm && mm.end_date ? `Jusqu'à la fin de la mission (${frDate(parse(mm.end_date))})` : "Jusqu'à la fin de la mission (sans date de fin)"; };
+  const custom = a && (a.pct !== 100 || (a.weekdays && a.weekdays.length && a.weekdays.length < 5) || a.end_date);
+  const advOpen = absence || custom;
   openModal(`<form class="modal" id="aForm" aria-label="Affectation">
     <h2>${a ? "Modifier" : absence ? "Poser une absence" : "Affecter à une mission"}${mem && !pickMember ? ` · ${esc(mem.name)}` : ""}</h2>
     <div class="form-grid">
       ${pickMember ? `<label class="f full">Consultant<select id="aMember">${state.members.map(x => `<option value="${esc(x.id)}" ${x.id === cur.member ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></label>` : ""}
-      <label class="f full">${absence ? "Motif" : "Mission"}<select id="aMission">${missionOptions(list, cur.mission)}</select></label>
+      <label class="f full">${absence ? "Motif" : "Mission"}<select id="aMission" class="big">${missionOptions(list, cur.mission)}</select></label>
+    </div>
+    ${absence ? "" : `<p class="express" id="aSummary"></p>`}
+    <details class="adv" id="aAdv" ${advOpen ? "open" : ""}>${absence ? "" : `<summary>Temps partiel, jours ou dates différents</summary>`}
+    <div class="form-grid">
       <div class="full"><span class="eyebrow">${absence ? "Durée" : "Temps passé chaque jour"}</span><div class="pcts" id="aPcts">${presets.map(([v, l]) => `<button type="button" data-p="${v}" aria-pressed="${cur.pct === v}">${l}</button>`).join("")}<input type="number" id="aPct" min="5" max="100" step="5" value="${cur.pct}" aria-label="Pourcentage personnalisé"> %</div></div>
       <div class="full"><span class="eyebrow">Jours concernés</span><div class="wds" id="aWds">${ALL_WD.map(i => `<button type="button" data-wd="${i}" aria-pressed="${cur.wd.includes(i)}" title="${WD_SHORT[i - 1]}">${WD[i - 1]}</button>`).join("")}</div></div>
       <label class="f">À partir du<input type="date" id="aStart" value="${esc(cur.start)}" required></label>
@@ -663,12 +722,19 @@ function assignModal({ memberId, aId, missionId, absence, pickMember }) {
         <label><input type="radio" name="aMode" id="aModeD" value="date" ${cur.mode === "date" ? "checked" : ""}>Une date précise <input type="date" id="aEnd" value="${esc(cur.end)}" aria-label="Date de fin"></label>
       </div>
     </div>
+    </details>
     <p class="empty-note" id="aHint"></p>
-    <div class="row-actions">${a ? `<button type="button" class="btn danger" id="aDel">Supprimer</button>` : "<span></span>"}<div class="r"><button type="button" class="btn" id="aCancel">Annuler</button><button class="btn primary" type="submit" id="aSave">Enregistrer</button></div></div>
+    <div class="row-actions">${a ? `<button type="button" class="btn danger" id="aDel">Supprimer</button>` : "<span></span>"}<div class="r"><button type="button" class="btn" id="aCancel">Annuler</button><button class="btn primary" type="submit" id="aSave">${a ? "Enregistrer" : absence ? "Poser l'absence" : "Affecter"}</button></div></div>
   </form>`);
   const syncPct = () => document.querySelectorAll("#aPcts [data-p]").forEach(b => b.setAttribute("aria-pressed", String(+b.dataset.p === cur.pct)));
+  const summary = () => {
+    const el = $("aSummary"); if (!el) return; const mm = missionById(cur.mission);
+    const end = cur.mode === "mission" ? (mm && mm.end_date ? `jusqu'à la fin de la mission (${frDate(parse(mm.end_date))})` : "jusqu'à la fin de la mission") : `jusqu'au ${frDate(parse(cur.end))}`;
+    const from = parse(cur.start) > TODAY ? ` à partir du ${frDate(parse(cur.start))}` : "";
+    el.innerHTML = `<strong>${cur.pct} %</strong> · ${esc(wdTxt(cur.wd).toLowerCase())} · ${esc(end)}${esc(from)}`;
+  };
   const hint = () => {
-    const h = $("aHint"); if (absence) { h.textContent = "Pendant une absence, les missions récurrentes sont suspendues automatiquement."; return; }
+    summary(); const h = $("aHint"); if (absence) { h.textContent = "Pendant une absence, les missions récurrentes sont suspendues automatiquement."; return; }
     const mid = pickMember ? $("aMember").value : memberId; const s = parse(cur.start);
     const e = cur.mode === "mission" ? missionEnd(missionById(cur.mission)) : parse(cur.end);
     if (isNaN(s) || isNaN(e)) { h.textContent = ""; return; } if (e < s) { h.innerHTML = `<span style="color:var(--bad)">La fin doit être après le début.</span>`; return; }
@@ -799,6 +865,8 @@ document.addEventListener("click", async e => {
   if (d.mf) { state.mFilter = d.mf; render(); return; }
   if (d.nav !== undefined) { state.planOffset = +d.nav === 0 ? 0 : state.planOffset + +d.nav; render(); return; }
   if (d.day) { const mid = planTarget(); if (mid) dayModal(mid, +d.day); return; }
+  if (d.qd) { const mid = planTarget(); if (mid && t.getAttribute("aria-pressed") !== "true") quickDay(mid, +d.qd, d.qk, t); return; }
+  if (d.wnav !== undefined) { state.weekOffset = +d.wnav === 0 ? 0 : state.weekOffset + +d.wnav; render(); return; }
   if (d.plan) { state.planMember = d.plan; state.planOffset = 0; state.tab = "moi"; render(); window.scrollTo(0, 0); return; }
   if (d.a) { assignModal({ aId: d.a }); return; }
   if (d.mi) { missionModal(d.mi); return; }
