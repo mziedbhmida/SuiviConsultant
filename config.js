@@ -5,11 +5,11 @@
 //  par les règles de la base (Row Level Security), pas par cette clé.
 // =====================================================================
 window.APP_CONFIG = {
-  SUPABASE_URL: "https://VOTRE-PROJET.supabase.co",
-  SUPABASE_ANON_KEY: "VOTRE-CLE-ANON-PUBLIQUE",
+  SUPABASE_URL: "https://tvetviytqzwkplpijvzw.supabase.co",
+  SUPABASE_ANON_KEY: "sb_publishable_77fCeHrJ_YdQJDtlycv1Kw_jySMXkDY",
 
   // Domaines e-mail acceptés à la connexion (vérifié aussi côté serveur)
-  ALLOWED_DOMAINS: ["datatilt.com"],
+  ALLOWED_DOMAINS: ["datatilt.fr"],
 
   // Objectif de taux facturable affiché dans les KPI
   TARGET_BILLABLE: 0.8,
