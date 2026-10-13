@@ -39,6 +39,23 @@ try {
 const $ = id => document.getElementById(id);
 const main = () => $("main");
 
+/* ================= thème clair / sombre ================= */
+const THEMES = {
+  auto:  { next: "light", label: "Auto",   icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/></svg>' },
+  light: { next: "dark",  label: "Clair",  icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>' },
+  dark:  { next: "auto",  label: "Sombre", icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>' }
+};
+let theme = "auto";
+try { const t = localStorage.getItem("pdc.theme"); if (THEMES[t]) theme = t; } catch (e) {}
+function applyTheme() {
+  if (theme === "auto") document.documentElement.removeAttribute("data-theme"); else document.documentElement.setAttribute("data-theme", theme);
+  const b = $("themeBtn"); if (!b) return;
+  b.innerHTML = `${THEMES[theme].icon}<span>${THEMES[theme].label}</span>`;
+  b.setAttribute("aria-label", `Thème : ${THEMES[theme].label}. Cliquer pour passer en ${THEMES[THEMES[theme].next].label.toLowerCase()}`);
+}
+applyTheme();
+document.getElementById("themeBtn")?.addEventListener("click", () => { theme = THEMES[theme].next; try { localStorage.setItem("pdc.theme", theme); } catch (e) {} applyTheme(); });
+
 if (!CFG.SUPABASE_URL || CFG.SUPABASE_URL.includes("VOTRE-PROJET") || !window.supabase) {
   main().innerHTML = `<div class="panel state"><h2>Configuration manquante</h2><p>Renseigne SUPABASE_URL et SUPABASE_ANON_KEY dans le fichier <code>config.js</code> (voir README).</p></div>`;
   return;

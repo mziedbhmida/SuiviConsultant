@@ -227,6 +227,10 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--bg);b
 .modal h2{font-size:1.15rem}
 .modal .eyebrow{display:block}
 @media (max-width:1000px){.grid2.even{grid-template-columns:1fr}}
+/* thème */
+.top-right{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end;min-width:0}
+.theme-btn{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 12px}
+.theme-btn svg{width:16px;height:16px;flex:none}
 /* v2.1 : saisie en 1 clic */
 .week{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;list-style:none;margin:0;padding:0}
 .wcard{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--bg);min-width:0}
@@ -251,6 +255,7 @@ select.big{font-size:1rem;padding:10px!important}
 @media (max-width:900px){.week{grid-template-columns:1fr}.qbtns{grid-template-columns:repeat(5,minmax(0,1fr))}.qbtn.more{grid-column:auto}}
 code{font-family:var(--f-mono);font-size:.9em;background:var(--soft);padding:1px 5px;border-radius:4px}
 </style>
+<script>try{var t=localStorage.getItem("pdc.theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
 </head>
 <body>
 <div class="wrap">
@@ -259,7 +264,10 @@ code{font-family:var(--f-mono);font-size:.9em;background:var(--soft);padding:1px
       <span class="eyebrow">DATATILT · Opérations</span>
       <h1>Plan de charge</h1>
     </div>
-    <div class="me" id="meChip" hidden></div>
+    <div class="top-right">
+      <button type="button" class="btn small theme-btn" id="themeBtn" title="Changer de thème"></button>
+      <div class="me" id="meChip" hidden></div>
+    </div>
   </header>
   <nav class="tabs" role="tablist" id="tabs"></nav>
   <div id="banner" hidden></div>
