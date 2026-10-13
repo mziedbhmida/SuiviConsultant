@@ -122,6 +122,12 @@ Ouvre ensuite <http://localhost:3000>. Pense à ajouter `http://localhost:3000` 
 | `supabase/seed.sql` | Données d'exemple (optionnel) |
 | `vercel.json` | En-têtes de sécurité pour Vercel |
 
+## Rôles
+
+- **Administrateur** (liste gérée dans l'onglet Administration) : missions, équipe, groupes, administrateurs, et modification de tous les plannings.
+- **Manager** : un consultant dont le rôle est « Manager » ou « Directeur de projet ». Il voit l'onglet Équipe (KPI, alertes, disponibilités) et consulte les plannings des autres en lecture seule.
+- **Collaborateur** : ne voit que l'onglet « Mon planning ».
+
 ## Règles de calcul
 
 - **Un jour** : si le jour a été ajusté manuellement, c'est cet ajustement qui compte ; sinon, ce sont les missions récurrentes actives ce jour-là (période de l'affectation, dates de la mission, jours de la semaine choisis).

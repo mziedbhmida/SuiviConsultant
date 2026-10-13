@@ -90,6 +90,9 @@ const memberById = id => state.members.find(m => m.id === id);
 const groupName = id => (state.groups.find(g => g.id === id) || {}).name || "Sans groupe";
 const cName = id => (memberById(id) || {}).name || "—";
 const isAdmin = () => state.me.isAdmin;
+const MANAGER_ROLES = ["Manager", "Directeur de projet"];
+const isManager = () => { const m = myMember(); return !!m && MANAGER_ROLES.includes(m.role); };
+const canOverview = () => isAdmin() || isManager();
 const myMember = () => state.me.id ? state.members.find(m => m.user_id === state.me.id) : null;
 const canEditMember = m => !!m && (isAdmin() || (state.me.id && m.user_id === state.me.id));
 const initials = s => (String(s || "?").split(/[@.\s_-]+/).filter(Boolean).slice(0, 2).map(x => x[0]).join("") || "?").toUpperCase();
@@ -359,16 +362,16 @@ function viewTeam() {
   const bar = `<div class="bar"><div class="controls">
       <select class="sel" id="gSel" aria-label="Groupe"><option value="">Toute l'équipe (${state.members.length})</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${state.group === g.id ? "selected" : ""}>${esc(g.name)} (${state.members.filter(m => m.group_id === g.id).length})</option>`).join("")}</select>
       <div class="seg" role="group" aria-label="Horizon">${HORIZONS.map(h => `<button data-h="${h}" aria-pressed="${state.h === h}">${h === 3 ? "3 sem. · par jour" : h + " sem."}</button>`).join("")}</div>
-      ${isAdmin() ? `<label class="toggle"><input type="checkbox" id="optProb" ${state.prob ? "checked" : ""}> Inclure le probable</label>` : ""}</div>
+      ${canOverview() ? `<label class="toggle"><input type="checkbox" id="optProb" ${state.prob ? "checked" : ""}> Inclure le probable</label>` : ""}</div>
     <span class="muted" style="font-size:.85rem">S${isoWeek(cols[0].t)} à S${isoWeek(last)}</span></div>`;
   if (!state.consultants.length) return bar + `<div class="panel state">Aucun consultant dans ce groupe.</div>`;
-  if (!isAdmin()) return `${bar}${renderHeat(cols)}`;
   return `${bar}${renderKpis(kpis())}<div class="grid2">${renderAlerts(alerts())}${renderChart(cols)}</div>${renderHeat(cols)}${renderFinderShell()}${renderAssignList()}`;
 }
 
 /* ================= vue Planning (au jour) ================= */
 function viewPlanning() {
   const own = myMember();
+  if (!canOverview()) state.planMember = null;
   let m = state.planMember ? memberById(state.planMember) : own;
   if (state.planMember && !m) { state.planMember = null; m = own; }
   const selector = isAdmin() && state.members.length ? `<div class="bar"><label class="toggle">Planning de
@@ -555,22 +558,24 @@ async function sendLink(email) {
 /* ================= rendu ================= */
 function renderTabs() {
   const pc = isAdmin() ? state.claims.length : 0;
-  const tabs = [["moi", "Mon planning"], ["equipe", "Équipe"]];
+  const tabs = [["moi", "Mon planning"]];
+  if (canOverview()) tabs.push(["equipe", "Équipe"]);
   if (isAdmin()) tabs.push(["missions", "Missions"], ["admin", "Administration"]);
   $("tabs").innerHTML = tabs.map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${state.tab === k}">${l}${k === "admin" && pc ? `<span class="count">${pc}</span>` : ""}</button>`).join("");
 }
 function renderChip() {
   const chip = $("meChip"); chip.hidden = false; const m = myMember();
-  chip.innerHTML = `<span class="avatar" aria-hidden="true"></span><span class="n"></span><span class="badge ${isAdmin() ? "admin" : ""}">${isAdmin() ? "Administrateur" : "Collaborateur"}</span><button class="btn small" id="btnLogout">Déconnexion</button>`;
+  chip.innerHTML = `<span class="avatar" aria-hidden="true"></span><span class="n"></span><span class="badge ${isAdmin() ? "admin" : ""}">${isAdmin() ? "Administrateur" : isManager() ? "Manager" : "Collaborateur"}</span><button class="btn small" id="btnLogout">Déconnexion</button>`;
   chip.querySelector(".avatar").textContent = initials(m ? m.name : state.me.email);
   chip.querySelector(".n").textContent = m ? m.name : state.me.email;
 }
 function render() {
   if (!state.me.id) return;
   if (!state.loaded) { main().innerHTML = `<div class="state">Chargement du plan de charge…</div>`; return; }
-  if (!state.tab) state.tab = isAdmin() ? "equipe" : "moi";
+  if (!state.tab) state.tab = canOverview() ? "equipe" : "moi";
+  if (state.tab === "equipe" && !canOverview()) { state.tab = "moi"; state.planMember = null; }
   if ((state.tab === "admin" || state.tab === "missions") && !isAdmin()) state.tab = "moi";
-  if (!isAdmin()) state.prob = true;
+  if (!canOverview()) state.prob = true;
   if (state.group && !state.groups.some(g => g.id === state.group)) state.group = "";
   rebuild(); renderTabs(); renderChip();
   const ex = state.members.some(m => m.example) || state.missions.some(m => m.example); const ban = $("banner"); ban.hidden = !(ex && isAdmin());
@@ -846,7 +851,7 @@ function memberModal(id) {
     <div class="form-grid">
       <label class="f full">Nom<input id="cName" required value="${esc(m.name)}"></label>
       <label class="f">Groupe<select id="cGroup"><option value="">Sans groupe</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${m.group_id === g.id ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select></label>
-      <label class="f">Rôle<select id="cRole">${ROLES.map(r => `<option ${m.role === r ? "selected" : ""}>${r}</option>`).join("")}</select></label>
+      <label class="f">Rôle<select id="cRole">${ROLES.map(r => `<option ${m.role === r ? "selected" : ""}>${r}</option>`).join("")}</select><span class="muted small">Manager et Directeur de projet voient la vue d'ensemble de l'équipe.</span></label>
       <div class="full"><span class="eyebrow">Compétences</span><div class="checks">${SKILLS.map((s, i) => `<label><input type="checkbox" id="cSk${i}" ${(m.skills || []).includes(s) ? "checked" : ""}>${esc(s)}</label>`).join("")}</div></div>
     </div>
     <div class="row-actions">${isNew ? "<span></span>" : `<button type="button" class="btn danger" id="cDel">Supprimer</button>`}<div class="r">${isNew ? "" : `<button type="button" class="btn" id="cPlan">Voir le planning</button>`}<button type="button" class="btn" id="cCancel">Fermer</button><button class="btn primary" type="submit">Enregistrer</button></div></div>
