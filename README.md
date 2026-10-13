@@ -2,7 +2,9 @@
 
 Plan de charge et disponibilité des consultants DATATILT.
 
-Chaque collaborateur se connecte avec son e-mail professionnel (lien magique, sans mot de passe) et tient à jour son propre planning. Les administrateurs gèrent l'équipe et les groupes, et pilotent les KPI : taux facturable, occupation, intercontrat, surcharges et fraîcheur des plannings.
+Les administrateurs créent les **missions** (BUILD, RUN, avant-vente, interne, absences). Chaque collaborateur se connecte avec son e-mail professionnel (lien magique, sans mot de passe), **s'affecte à ses missions** (pourcentage, jours de la semaine, jusqu'à la fin de la mission) et son planning se remplit tout seul. Il ajuste ensuite au jour près sur une grille de 3 semaines (absence, demi-journée, autre mission).
+
+Les administrateurs pilotent les KPI : taux facturable, occupation, intercontrat, surcharges et fraîcheur des plannings.
 
 - **Front** : HTML/JS statique, sans étape de build, hébergé sur Vercel.
 - **Back-end** : Supabase (base Postgres, authentification, temps réel).
@@ -35,8 +37,9 @@ Crée d'abord le dépôt **vide** sur github.com (bouton *New repository*, nom `
    - ton e-mail d'administrateur.
 
    Colle ensuite le fichier et clique sur **Run**.
-4. *(Optionnel)* Pour avoir des données d'exemple, exécute `supabase/seed.sql`. Elles se suppriment ensuite en un clic dans l'application.
-5. Va dans **Project Settings → API** et copie :
+4. Exécute ensuite `supabase/migration_v2.sql` (missions, affectations, saisie au jour, gestion des admins).
+5. *(Optionnel)* Pour avoir des données d'exemple, exécute `supabase/seed.sql`. Elles se suppriment ensuite en un clic dans l'application.
+6. Va dans **Project Settings → API** et copie :
    - **Project URL** ;
    - la clé **anon public**.
 
@@ -68,12 +71,22 @@ Dans Supabase, va dans **Authentication → URL Configuration** :
 ### 6. Premier lancement
 
 1. Ouvre l'application et connecte-toi avec l'e-mail déclaré administrateur.
-2. Dans **Administration** :
+2. Dans **Missions** : crée le catalogue (une mission « sans date de fin » pour les BUILD à l'année et les TMA). Les motifs d'absence « Congés / absence » et « Temps partiel » existent déjà.
+3. Dans **Administration** :
+   - ajoute les autres administrateurs ;
    - crée les groupes (ex. Pôle PA, Pôle BOARD, Pôle IA) ;
    - crée les profils des consultants ;
    - supprime les exemples.
-3. Dans **Mon planning**, choisis ton propre profil. Pour un administrateur, le rattachement est immédiat.
-4. Envoie l'adresse de l'application à l'équipe. Chacun se connecte, choisit son nom, puis tu valides la demande dans **Administration**.
+4. Dans **Mon planning**, choisis ton propre profil. Pour un administrateur, le rattachement est immédiat.
+5. Envoie l'adresse de l'application à l'équipe. Chacun se connecte, choisit son nom (tu valides la demande dans **Administration**), puis s'affecte à ses missions avec « + Affecter à une mission ».
+
+---
+
+## Mise à jour vers la v2 (déploiement existant)
+
+1. Remplace dans le dépôt GitHub les fichiers `app.js`, `index.html`, `README.md` et le dossier `supabase/` (garde ton `config.js`).
+2. Dans Supabase, **SQL Editor** : exécute `supabase/migration_v2.sql`. Les staffings déjà saisis sont convertis en missions + affectations ; rien n'est perdu.
+3. Vercel redéploie automatiquement après le commit.
 
 ---
 
@@ -81,7 +94,6 @@ Dans Supabase, va dans **Authentication → URL Configuration** :
 
 - **Envoi des e-mails** : le service d'e-mail intégré de Supabase est limité à quelques envois par heure. Pour une équipe de 20 personnes, configure un SMTP professionnel dans **Authentication → Emails → SMTP Settings** (Microsoft 365, Brevo, Resend…).
 - **Modèle d'e-mail** : dans **Authentication → Emails → Magic Link**, traduis l'objet et le texte en français.
-- **Ajouter un administrateur** : dans SQL Editor, exécute `insert into public.admins (email) values ('autre.admin@datatilt.com');`
 - **Autoriser un autre domaine** (filiale…) : exécute `insert into public.allowed_domains (domain) values ('autre-domaine.com');` puis ajoute-le dans `config.js`.
 - **Sauvegardes** : le plan gratuit de Supabase ne garde pas d'historique long. Exporte régulièrement les tables (Table Editor → Export CSV) ou passe au plan Pro.
 
@@ -105,16 +117,19 @@ Ouvre ensuite <http://localhost:3000>. Pense à ajouter `http://localhost:3000` 
 | `app.js` | Application (calculs, KPI, alertes, écrans) |
 | `config.js` | Connexion à Supabase, domaine autorisé, objectifs |
 | `vendor/supabase.js` | Client Supabase v2.45.4 (licence MIT, embarqué pour ne dépendre d'aucun CDN) |
-| `supabase/schema.sql` | Tables, règles de sécurité, restriction de domaine |
+| `supabase/schema.sql` | Tables de base, règles de sécurité, restriction de domaine |
+| `supabase/migration_v2.sql` | Missions, affectations récurrentes, saisie au jour, gestion des admins |
 | `supabase/seed.sql` | Données d'exemple (optionnel) |
 | `vercel.json` | En-têtes de sécurité pour Vercel |
 
 ## Règles de calcul
 
-- **Capacité nette** : capacité du consultant (jours/semaine), moins les jours fériés français (calculés automatiquement, Pâques inclus) et les absences.
+- **Un jour** : si le jour a été ajusté manuellement, c'est cet ajustement qui compte ; sinon, ce sont les missions récurrentes actives ce jour-là (période de l'affectation, dates de la mission, jours de la semaine choisis).
+- **Absences** : une absence récurrente (congés, temps partiel) suspend les missions au prorata. Une demi-journée d'absence divise la mission par deux ce jour-là.
+- **Capacité nette** : 1 jour par jour ouvré, moins les jours fériés français (calculés automatiquement, Pâques inclus) et les absences.
 - **Taux facturable** : (BUILD + RUN) / capacité nette.
 - **Taux d'occupation** : (BUILD + RUN + avant-vente + interne) / capacité nette.
 - **Intercontrat** : consultant sous 50 % de charge sur la semaine en cours.
-- **Surcharge** : semaine où la charge dépasse 100 %.
+- **Surcharge** : jour où la charge dépasse 100 %.
 - **Planning à jour** : planning modifié ou confirmé il y a moins de 14 jours (paramétrable dans `config.js`).
-- Les staffings **probables** peuvent être inclus ou exclus des calculs grâce à l'interrupteur.
+- Les missions **probables** peuvent être inclus ou exclus des calculs grâce à l'interrupteur.
