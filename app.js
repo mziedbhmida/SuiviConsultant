@@ -418,7 +418,8 @@ function viewPlanning() {
       return `<td class="v c ${b} ${r.explicit ? "ex" : ""} ${wk}" title="${esc(frLong(d))}${r.explicit ? " · ajusté manuellement" : ""}">${cellBtn(d, txt)}</td>`;
     }).join("")}</tr>`;
   const addable = ro ? [] : state.missions.filter(x => x.active !== false && !rows.some(r => r.m.id === x.id)).sort(missionSort);
-  const addRow = addable.length ? `<tr class="addrow"><th class="lbl" scope="row"><select class="sel" id="gridAdd" aria-label="Ajouter une mission à la grille"><option value="">+ Ajouter une mission</option>${missionOptions(addable)}</select></th><td colspan="${days.length}"></td></tr>` : "";
+  gridAddable = addable;
+  const addRow = addable.length ? `<tr class="addrow"><th class="lbl" scope="row"><input type="search" class="sel" id="gridAddQ" placeholder="+ Ajouter une mission…" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="gridAddList" aria-label="Rechercher une mission à ajouter"><ul id="gridAddList" class="ga-list" role="listbox" hidden></ul></th><td colspan="${days.length}"></td></tr>` : "";
   const emptyRow = rows.length ? "" : `<tr><th class="lbl muted" scope="row">Aucune mission</th><td colspan="${days.length}" class="empty-note" style="padding:12px">${ro ? "Rien de planifié sur ces 3 semaines." : "Affecte-toi à une mission récurrente, ou clique sur un jour pour le remplir."}</td></tr>`;
   const free = totals.reduce((s, r) => s + (r ? r.free : 0), 0);
 
@@ -442,6 +443,41 @@ function viewPlanning() {
 
 /* motif d'absence par défaut */
 const absenceMission = () => state.missions.find(x => x.type === "ABSENCE" && x.active !== false && x.name === "Congés / absence") || state.missions.find(x => x.type === "ABSENCE" && x.active !== false);
+/* ================= « + Ajouter une mission » : recherche dans le catalogue ================= */
+let gridAddable = [], gaActive = 0, gaHits = [];
+function gridAddPick(mis) {
+  const mid = planTarget(); if (!mid || !mis) return;
+  gaClose();
+  state.gridExtra = state.gridExtra || {}; const ex = state.gridExtra[mid] = state.gridExtra[mid] || []; if (!ex.includes(mis)) ex.push(mis);
+  const inp = $("gridAddQ"); if (inp) { inp.value = ""; inp.blur(); }
+  render();
+  const cells = [...document.querySelectorAll(`button[data-cell][data-mis="${CSS.escape(mis)}"]`)];
+  const first = cells.find(b => +b.dataset.cell >= TODAY) || cells[0]; if (first) openCell(first);
+}
+function gaClose() { const l = $("gridAddList"); if (l) l.hidden = true; const i = $("gridAddQ"); if (i) i.setAttribute("aria-expanded", "false"); }
+function gaDraw() {
+  const inp = $("gridAddQ"), list = $("gridAddList"); if (!inp || !list) return;
+  const words = normTxt(inp.value).split(/\s+/).filter(Boolean);
+  gaHits = gridAddable.filter(m => { const h = normTxt(`${m.client} ${m.name} ${TYPES[m.type].label}`); return words.every(w => h.includes(w)); });
+  gaActive = Math.min(gaActive, Math.max(0, gaHits.length - 1));
+  const r = inp.getBoundingClientRect();
+  Object.assign(list.style, { top: r.bottom + 4 + "px", left: r.left + "px", width: Math.max(r.width, 340) + "px" });
+  list.innerHTML = gaHits.length ? gaHits.slice(0, 80).map((m, i) => `<li role="option" id="ga${i}" data-gadd="${esc(m.id)}" aria-selected="${i === gaActive}"><i class="dot" style="background:${TYPES[m.type].color}"></i><span><strong>${esc(m.name)}</strong>${m.client ? ` <span class="muted">· ${esc(m.client)}</span>` : ""}</span><small>${esc(TYPES[m.type].label)}${m.status === "probable" && m.type !== "ABSENCE" ? " · probable" : ""}</small></li>`).join("") + (gaHits.length > 80 ? `<li class="muted small more">… ${gaHits.length - 80} autres : précise ta recherche</li>` : "") : `<li class="muted small more">Aucune mission ne correspond</li>`;
+  list.hidden = false; inp.setAttribute("aria-expanded", "true"); inp.setAttribute("aria-activedescendant", gaHits.length ? "ga" + gaActive : "");
+  const act = $("ga" + gaActive); if (act) act.scrollIntoView({ block: "nearest" });
+}
+document.addEventListener("focusin", e => { if (e.target.id === "gridAddQ") { cellEditing = true; gaActive = 0; gaDraw(); } });
+document.addEventListener("focusout", e => { if (e.target.id === "gridAddQ") { cellEditing = false; setTimeout(gaClose, 150); } });
+document.addEventListener("keydown", e => {
+  if (e.target.id !== "gridAddQ") return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); gaActive = Math.max(0, Math.min(Math.min(gaHits.length, 80) - 1, gaActive + (e.key === "ArrowDown" ? 1 : -1))); gaDraw(); }
+  else if (e.key === "Enter") { e.preventDefault(); if (gaHits[gaActive]) gridAddPick(gaHits[gaActive].id); }
+  else if (e.key === "Escape") { e.stopPropagation(); e.target.value = ""; e.target.blur(); }
+});
+document.addEventListener("mousedown", e => { const li = e.target.closest("#gridAddList [data-gadd]"); if (li) { e.preventDefault(); gridAddPick(li.dataset.gadd); } });
+window.addEventListener("resize", gaClose);
+document.addEventListener("scroll", e => { const l = $("gridAddList"); if (!l || l.hidden || e.target === l) return; const i = $("gridAddQ"), r = i && i.getBoundingClientRect(); if (r) Object.assign(l.style, { top: r.bottom + 4 + "px", left: r.left + "px" }); }, true);
+
 /* ================= saisie en bloc : sélection de plusieurs cases (glisser, Maj+clic, clic sur le nom de la mission) ================= */
 let gsel = null, gselDrag = false, gselMoved = false, gselNoClick = false;
 function gridMatrix() {
@@ -1323,17 +1359,10 @@ document.addEventListener("change", e => {
   if (e.target.id === "gSel") { state.group = e.target.value; try { localStorage.setItem("pdc.g", state.group); } catch (_) {} render(); }
   if (e.target.id === "mSelAll") { const f = state.mFilter; state.missions.filter(m => f === "toutes" || (f === "actives" ? m.active !== false : m.active === false)).forEach(m => e.target.checked ? state.mSel.add(m.id) : state.mSel.delete(m.id)); render(); return; }
   if (e.target.classList.contains("mSelChk")) { const id = e.target.dataset.msel; e.target.checked ? state.mSel.add(id) : state.mSel.delete(id); render(); return; }
-  if (e.target.id === "gridAdd" && e.target.value) {
-    const mid = planTarget(); if (!mid) return; const mis = e.target.value;
-    state.gridExtra = state.gridExtra || {}; const ex = state.gridExtra[mid] = state.gridExtra[mid] || []; if (!ex.includes(mis)) ex.push(mis);
-    render();
-    const cells = [...document.querySelectorAll(`button[data-cell][data-mis="${CSS.escape(mis)}"]`)];
-    const first = cells.find(b => +b.dataset.cell >= TODAY) || cells[0]; if (first) openCell(first);
-    return;
-  }
   if (e.target.id === "pmSel") { state.planMember = e.target.value || null; state.planOffset = 0; render(); }
 });
 document.addEventListener("input", e => {
+  if (e.target.id === "gridAddQ") { gaActive = 0; gaDraw(); return; }
   const id = e.target.id;
   if (id === "lFilter") { state.filter = e.target.value; clearTimeout(render.t); render.t = setTimeout(render, 200); return; }
   if (id === "fSkill") finder.skill = e.target.value; else if (id === "fStart") finder.start = e.target.value; else if (id === "fWeeks") finder.weeks = e.target.value; else if (id === "fDays") finder.days = e.target.value; else return;

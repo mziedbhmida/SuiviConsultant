@@ -234,7 +234,13 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--bg);b
 .gselbar label{display:flex;align-items:center;gap:6px}
 .gselbar input{width:70px;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:7px;padding:5px 8px;font:inherit;text-align:center}
 .dgrid tr.addrow .lbl{padding:6px 8px}
-.dgrid tr.addrow select{width:100%;font-size:.82rem}
+.dgrid tr.addrow input{width:100%;box-sizing:border-box;font-size:.82rem;color:var(--ink)}
+.ga-list{position:fixed;z-index:50;margin:0;padding:4px;list-style:none;max-height:min(360px,50vh);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.25);font-weight:400}
+.ga-list li{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;cursor:pointer;font-size:.84rem}
+.ga-list li > span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ga-list li small{color:var(--muted);font-size:.72rem;white-space:nowrap}
+.ga-list li[aria-selected="true"],.ga-list li[data-gadd]:hover{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.ga-list li.more{cursor:default}
 .dgrid tr.total td.v{font-weight:600;height:46px}
 .dgrid tr.total .lbl{font-weight:600}
 .navw{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
