@@ -399,6 +399,8 @@ function viewPlanning() {
     for (const p of r.parts) { let row = rowsMap.get(p.m.id); if (!row) { row = { m: p.m, vals: new Map() }; rowsMap.set(p.m.id, row); } row.vals.set(d, (row.vals.get(d) || 0) + p.pct); }
   }
   const rows = [...rowsMap.values()].sort((a, b) => missionSort(a.m, b.m));
+  /* missions ajoutées depuis la grille, pas encore saisies sur ces 3 semaines */
+  for (const id of (state.gridExtra || {})[m.id] || []) { const x = missionById(id); if (x && !rowsMap.has(id)) rows.push({ m: x, vals: new Map() }); }
   const head = headRows(days.map(t => ({ t, kind: "day" })), `<th class="lbl">Mission</th>`);
   const cellBtn = (d, inner) => ro ? inner : `<button data-day="${d}" aria-label="Modifier le ${esc(frLong(d))}">${inner}</button>`;
   const body = rows.map(row => `<tr><th class="lbl" scope="row"><span class="mrow"><i class="dot" style="background:${TYPES[row.m.type].color}"></i><span>${esc(row.m.name)}<small>${esc(row.m.client || TYPES[row.m.type].label)}${row.m.status === "probable" ? " · probable" : ""}</small></span></span></th>${days.map((d, i) => {
@@ -414,6 +416,8 @@ function viewPlanning() {
       const b = band(r); const txt = b === "abs" ? "Abs." : Math.round(r.load * 100) + "%";
       return `<td class="v c ${b} ${r.explicit ? "ex" : ""} ${wk}" title="${esc(frLong(d))}${r.explicit ? " · ajusté manuellement" : ""}">${cellBtn(d, txt)}</td>`;
     }).join("")}</tr>`;
+  const addable = ro ? [] : state.missions.filter(x => x.active !== false && !rows.some(r => r.m.id === x.id)).sort(missionSort);
+  const addRow = addable.length ? `<tr class="addrow"><th class="lbl" scope="row"><select class="sel" id="gridAdd" aria-label="Ajouter une mission à la grille"><option value="">+ Ajouter une mission</option>${missionOptions(addable)}</select></th><td colspan="${days.length}"></td></tr>` : "";
   const emptyRow = rows.length ? "" : `<tr><th class="lbl muted" scope="row">Aucune mission</th><td colspan="${days.length}" class="empty-note" style="padding:12px">${ro ? "Rien de planifié sur ces 3 semaines." : "Affecte-toi à une mission récurrente, ou clique sur un jour pour le remplir."}</td></tr>`;
   const free = totals.reduce((s, r) => s + (r ? r.free : 0), 0);
 
@@ -428,7 +432,7 @@ function viewPlanning() {
   ${ro ? "" : weekCards(m)}
   <section class="panel"><div class="panel-head"><h2>Vue sur 3 semaines</h2>
     <div class="navw"><span class="eyebrow">${d1(free)} j libres</span><button class="btn small" data-nav="-1" aria-label="Semaine précédente">←</button><button class="btn small" data-nav="0">Aujourd'hui</button><button class="btn small" data-nav="1" aria-label="Semaine suivante">→</button></div></div>
-    <div class="scroll"><table class="dgrid"><thead>${head}</thead><tbody>${body}${emptyRow}${totalRow}</tbody></table></div>
+    <div class="scroll"><table class="dgrid"><thead>${head}</thead><tbody>${body}${emptyRow}${addRow}${totalRow}</tbody></table></div>
     <p class="muted small">${ro ? "" : "Clique sur une case pour saisir le % directement (Entrée ou Tab pour valider, Échap pour annuler, 0 pour retirer). Clique sur la charge du jour pour poser une absence ou ajouter une autre mission. "}Les valeurs sont en % de la journée. Un point signale un jour ajusté manuellement.</p></section>
   <section class="panel"><div class="panel-head"><h2>Missions récurrentes</h2><span class="eyebrow">remplissent automatiquement le planning</span></div>
     <div class="scroll"><table class="list"><thead><tr><th>Mission</th><th>Type</th><th>Statut</th><th>Temps</th><th>Jours</th><th>Période</th><th>Fin dans</th><th></th></tr></thead><tbody>${assignRows(work, false) || `<tr><td colspan="8" class="empty-note">Aucune mission récurrente${ro ? "." : " : « + Affecter à une mission » pour en ajouter une."}</td></tr>`}</tbody></table></div></section>
@@ -999,6 +1003,14 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal()
 document.addEventListener("change", e => {
   if (e.target.id === "optProb") { state.prob = e.target.checked; try { localStorage.setItem("pdc.prob", state.prob ? "1" : "0"); } catch (_) {} render(); }
   if (e.target.id === "gSel") { state.group = e.target.value; try { localStorage.setItem("pdc.g", state.group); } catch (_) {} render(); }
+  if (e.target.id === "gridAdd" && e.target.value) {
+    const mid = planTarget(); if (!mid) return; const mis = e.target.value;
+    state.gridExtra = state.gridExtra || {}; const ex = state.gridExtra[mid] = state.gridExtra[mid] || []; if (!ex.includes(mis)) ex.push(mis);
+    render();
+    const cells = [...document.querySelectorAll(`button[data-cell][data-mis="${CSS.escape(mis)}"]`)];
+    const first = cells.find(b => +b.dataset.cell >= TODAY) || cells[0]; if (first) openCell(first);
+    return;
+  }
   if (e.target.id === "pmSel") { state.planMember = e.target.value || null; state.planOffset = 0; render(); }
 });
 document.addEventListener("input", e => {
