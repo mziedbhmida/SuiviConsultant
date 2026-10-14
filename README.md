@@ -38,6 +38,7 @@ Crée d'abord le dépôt **vide** sur github.com (bouton *New repository*, nom `
 
    Colle ensuite le fichier et clique sur **Run**.
 4. Exécute ensuite `supabase/migration_v2.sql` (missions, affectations, saisie au jour, gestion des admins).
+   Puis `supabase/migration_v3.sql` (e-mail des consultants pour les rappels).
 5. *(Optionnel)* Pour avoir des données d'exemple, exécute `supabase/seed.sql`. Elles se suppriment ensuite en un clic dans l'application.
 6. Va dans **Project Settings → API** et copie :
    - **Project URL** ;
@@ -119,12 +120,13 @@ Ouvre ensuite <http://localhost:3000>. Pense à ajouter `http://localhost:3000` 
 | `vendor/supabase.js` | Client Supabase v2.45.4 (licence MIT, embarqué pour ne dépendre d'aucun CDN) |
 | `supabase/schema.sql` | Tables de base, règles de sécurité, restriction de domaine |
 | `supabase/migration_v2.sql` | Missions, affectations récurrentes, saisie au jour, gestion des admins |
+| `supabase/migration_v3.sql` | E-mail de contact des consultants (rappels) |
 | `supabase/seed.sql` | Données d'exemple (optionnel) |
 | `vercel.json` | En-têtes de sécurité pour Vercel |
 
 ## Rôles
 
-- **Administrateur** (liste gérée dans l'onglet Administration) : missions, équipe, groupes, administrateurs, et modification de tous les plannings.
+- **Administrateur** (liste gérée dans l'onglet Administration) : missions (import et suppression en masse), équipe, groupes, administrateurs, modification de tous les plannings, et rappels par e-mail (bouton « ✉ Envoyer un rappel » de l'onglet Équipe, qui ouvre la messagerie avec le message prêt).
 - **Manager** : un consultant dont le rôle est « Manager » ou « Directeur de projet ». Il voit l'onglet Équipe (KPI, alertes, disponibilités) et consulte les plannings des autres en lecture seule.
 - **Collaborateur** : ne voit que l'onglet « Mon planning ».
 

@@ -70,6 +70,7 @@ const parse = s => { if (!s) return NaN; const [y, m, d] = String(s).slice(0, 10
 const iso = t => new Date(t).toISOString().slice(0, 10);
 const monday = t => { const d = new Date(t).getUTCDay(); return t - ((d + 6) % 7) * DAY; };
 const isoWeek = t => { const m = monday(t); const y = new Date(m + 3 * DAY).getUTCFullYear(); return 1 + Math.round((m - monday(Date.UTC(y, 0, 4))) / (7 * DAY)); };
+const frDateY = t => !isFinite(t) ? "–" : new Date(t).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 const frDate = t => !isFinite(t) ? "–" : new Date(t).toLocaleDateString("fr-FR", { day: "numeric", month: "short", timeZone: "UTC" });
 const frLong = t => new Date(t).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 const wdIdx = t => new Date(t).getUTCDay();
@@ -363,7 +364,7 @@ function viewTeam() {
       <select class="sel" id="gSel" aria-label="Groupe"><option value="">Toute l'équipe (${state.members.length})</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${state.group === g.id ? "selected" : ""}>${esc(g.name)} (${state.members.filter(m => m.group_id === g.id).length})</option>`).join("")}</select>
       <div class="seg" role="group" aria-label="Horizon">${HORIZONS.map(h => `<button data-h="${h}" aria-pressed="${state.h === h}">${h === 3 ? "3 sem. · par jour" : h + " sem."}</button>`).join("")}</div>
       ${canOverview() ? `<label class="toggle"><input type="checkbox" id="optProb" ${state.prob ? "checked" : ""}> Inclure le probable</label>` : ""}</div>
-    <span class="muted" style="font-size:.85rem">S${isoWeek(cols[0].t)} à S${isoWeek(last)}</span></div>`;
+    <div class="controls"><span class="muted" style="font-size:.85rem">S${isoWeek(cols[0].t)} à S${isoWeek(last)}</span>${isAdmin() ? `<button class="btn small" id="btnRemind">✉ Envoyer un rappel</button>` : ""}</div></div>`;
   if (!state.consultants.length) return bar + `<div class="panel state">Aucun consultant dans ce groupe.</div>`;
   return `${bar}${renderKpis(kpis())}<div class="grid2">${renderAlerts(alerts())}${renderChart(cols)}</div>${renderHeat(cols)}${renderFinderShell()}${renderAssignList()}`;
 }
@@ -564,18 +565,21 @@ function viewMissions() {
   const f = state.mFilter;
   const list = state.missions.filter(m => f === "toutes" || (f === "actives" ? m.active !== false : m.active === false)).sort(missionSort);
   const D = workdaysBetween(monday(TODAY), monday(TODAY) + 20 * DAY);
+  const sel = state.mSel = state.mSel || new Set();
+  for (const id of [...sel]) if (!list.some(m => m.id === id)) sel.delete(id);
+  const allSel = list.length > 0 && list.every(m => sel.has(m.id));
   const rows = list.map(m => {
     const who = [...new Set(state.assign.filter(a => a.mission_id === m.id && aEnd(a) >= TODAY).map(a => a.member_id))];
     let charge = 0; for (const mem of state.members) for (const t of D) { const r = dayCell(mem.id, t, true); for (const p of r.parts) if (p.m.id === m.id) charge += p.pct / 100; }
-    return `<tr><td><strong>${esc(m.name)}</strong><br><span class="muted">${esc(m.client || "")}</span></td><td>${typeTag(m.type)}</td><td>${statusPill(m)}${m.active === false ? ' <span class="pill">Archivée</span>' : ""}</td>
-      <td class="mono small" style="white-space:nowrap">${m.start_date ? frDate(parse(m.start_date)) : "—"} → ${m.end_date ? frDate(parse(m.end_date)) : "sans fin"}</td>
+    return `<tr${sel.has(m.id) ? ' class="sel"' : ""}><td class="chk"><input type="checkbox" class="mSelChk" data-msel="${esc(m.id)}" ${sel.has(m.id) ? "checked" : ""} aria-label="Sélectionner ${esc(missionLabel(m))}"></td><td><strong>${esc(m.name)}</strong><br><span class="muted">${esc(m.client || "")}</span></td><td>${typeTag(m.type)}</td><td>${statusPill(m)}${m.active === false ? ' <span class="pill">Archivée</span>' : ""}</td>
+      <td class="mono small" style="white-space:nowrap">${m.start_date ? frDateY(parse(m.start_date)) : "—"} → ${m.end_date ? frDateY(parse(m.end_date)) : "sans fin"}</td>
       <td class="small">${who.length ? esc(who.map(cName).join(", ")) : `<span class="muted">Personne</span>`}</td><td class="mono">${d1(charge)} j</td>
       <td style="white-space:nowrap"><button class="btn small" data-mi="${esc(m.id)}">Modifier</button> ${m.active !== false ? `<button class="btn small" data-massign="${esc(m.id)}">Affecter</button>` : ""}</td></tr>`;
   }).join("");
   return `<div class="bar"><div class="seg" role="group" aria-label="Filtre">${[["actives", "Actives"], ["archivees", "Archivées"], ["toutes", "Toutes"]].map(([k, l]) => `<button data-mf="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div><div class="bar"><button class="btn" id="btnBulkM">Import en masse</button><button class="btn primary" id="btnAddM">+ Mission</button></div></div>
-  <section class="panel"><div class="panel-head"><h2>Catalogue des missions</h2><span class="eyebrow">${list.length} mission${list.length > 1 ? "s" : ""}</span></div>
+  <section class="panel"><div class="panel-head"><h2>Catalogue des missions</h2>${sel.size ? `<div class="bar selbar"><strong>${sel.size} sélectionnée${sel.size > 1 ? "s" : ""}</strong><button class="btn small" id="mSelNone">Désélectionner</button><button class="btn small" id="mSelArch">Archiver</button><button class="btn small" id="mSelUnarch">Réactiver</button><button class="btn small danger" id="mSelDel">Supprimer</button></div>` : `<span class="eyebrow">${list.length} mission${list.length > 1 ? "s" : ""}</span>`}</div>
     <p class="muted small">Les collaborateurs choisissent dans ce catalogue. Une mission sans date de fin (ex. BUILD à l'année, TMA) remplit leur planning en continu. Les missions de type Absence (congés, temps partiel) sont proposées à tous dans « Poser une absence ».</p>
-    <div class="scroll"><table class="list"><thead><tr><th>Mission</th><th>Type</th><th>Statut</th><th>Période</th><th>Consultants</th><th>Charge 3 sem.</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="7" class="empty-note">Aucune mission. Commence par « + Mission ».</td></tr>`}</tbody></table></div></section>`;
+    <div class="scroll"><table class="list"><thead><tr><th class="chk"><input type="checkbox" id="mSelAll" ${allSel ? "checked" : ""} ${list.length ? "" : "disabled"} aria-label="Tout sélectionner"></th><th>Mission</th><th>Type</th><th>Statut</th><th>Période</th><th>Consultants</th><th>Charge 3 sem.</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="8" class="empty-note">Aucune mission. Commence par « + Mission ».</td></tr>`}</tbody></table></div></section>`;
 }
 
 /* ================= vue Administration ================= */
@@ -878,6 +882,18 @@ function assignModal({ memberId, aId, missionId, absence, pickMember }) {
 }
 
 /* --- mission (admin) --- */
+/* --- suppression de missions en masse : les missions utilisées (affectations, jours saisis) sont protégées par la base --- */
+async function deleteMissions(ids) {
+  const used = new Set([...state.assign.map(a => a.mission_id), ...state.entries.map(e => e.mission_id)]);
+  const free = ids.filter(id => !used.has(id)); let busy = ids.length - free.length, done = 0;
+  if (free.length) {
+    try { await q(sb.from("missions").delete().in("id", free)); done = free.length; }
+    catch (_) { for (const id of free) { try { await q(sb.from("missions").delete().eq("id", id)); done++; } catch (_) { busy++; } } }
+  }
+  state.mSel.clear();
+  toast(`${done} mission${done > 1 ? "s supprimées" : " supprimée"}${busy ? ` · ${busy} non supprimée${busy > 1 ? "s" : ""} car utilisée${busy > 1 ? "s" : ""} dans des plannings : archive-les plutôt` : ""}`);
+  await after();
+}
 /* --- import de missions en masse (copier-coller depuis Excel ou une ligne par mission) --- */
 const normTxt = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 function parseType(s, def) {
@@ -993,6 +1009,74 @@ function missionModal(id) {
   });
 }
 
+/* --- rappel par e-mail (ouvre la messagerie de l'administrateur, destinataires en Cci) --- */
+const hasEmailCol = () => state.members.some(x => "email" in x);
+const memberEmail = m => (m.email || m.user_email || "").trim();
+const firstName = n => String(n || "").trim().split(/\s+/)[0] || "";
+function planGaps(m) {
+  const days = workdaysBetween(TODAY, monday(TODAY) + 20 * DAY);
+  const free = days.reduce((s, d) => s + dayCell(m.id, d, true).free, 0);
+  const t = lastUpdate(m.id); const age = t ? Math.round((TODAY - t) / DAY) : null;
+  const never = age == null && !days.some(d => dayCell(m.id, d, true).parts.length);
+  return { free, age, never, stale: age == null || age > STALE_DAYS, need: never || age == null || age > STALE_DAYS || free >= 0.5 };
+}
+function gapText(g) {
+  if (g.never) return "Planning jamais rempli";
+  const out = [];
+  if (g.free >= 0.5) out.push(`${d1(g.free)} j non renseigné${g.free >= 2 ? "s" : ""} sur 3 semaines`);
+  if (g.age == null) out.push("jamais confirmé"); else if (g.age > STALE_DAYS) out.push(`confirmé il y a ${g.age} j`);
+  return out.join(" · ") || "À jour";
+}
+const mailto = (to, bcc, subject, body) => `mailto:${encodeURIComponent(to).replace(/%40/g, "@").replace(/%2C/g, ",")}?${bcc ? "bcc=" + bcc.map(x => encodeURIComponent(x).replace(/%40/g, "@")).join(",") + "&" : ""}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+function remindModal() {
+  if (!isAdmin()) return;
+  const me = myMember(); const sign = me ? me.name : "";
+  const url = location.origin + location.pathname;
+  const list = state.consultants.map(m => ({ m, g: planGaps(m) })).sort((a, b) => (b.g.need - a.g.need) || a.m.name.localeCompare(b.m.name, "fr"));
+  const canEdit = hasEmailCol();
+  const defBody = `Bonjour,\n\nPetit rappel : merci de compléter ton plan de charge sur les 3 prochaines semaines (missions, absences, jours libres), puis de cliquer sur « Confirmer le planning ».\n\n${url}\n\nMerci !\n${sign}`;
+  openModal(`<form class="modal wide" id="rForm" aria-label="Envoyer un rappel">
+    <h2>Rappel de mise à jour des plannings</h2>
+    <p class="muted small">Sont cochés les consultants dont le planning n'est pas rempli, incomplet sur les 3 prochaines semaines ou non confirmé depuis plus de ${STALE_DAYS} jours. Le bouton ouvre ta messagerie avec le message prêt, destinataires en copie cachée : il ne reste qu'à cliquer sur Envoyer. ✉ sur une ligne prépare un message personnalisé.</p>
+    <div class="bar"><div class="checks"><label><input type="checkbox" id="rAll"> Tout cocher</label></div><span class="muted small" id="rCount"></span></div>
+    <div class="scroll" id="rList" style="max-height:300px;overflow:auto"><table class="list"><thead><tr><th></th><th>Consultant</th><th>État</th><th>E-mail</th><th></th></tr></thead><tbody>${list.map(({ m, g }, i) => {
+      const em = memberEmail(m);
+      return `<tr><td><input type="checkbox" class="rChk" data-ri="${i}" ${g.need && em ? "checked" : ""} ${em ? "" : "disabled"} aria-label="${esc(m.name)}"></td><td><strong>${esc(m.name)}</strong><br><span class="muted small">${esc(groupName(m.group_id))}</span></td>
+        <td class="small"><span class="pill ${g.need ? "wait" : "ok"}">${esc(gapText(g))}</span></td>
+        <td class="small">${em ? esc(em) : canEdit ? `<input type="email" class="rEm" data-ri="${i}" placeholder="e-mail manquant" aria-label="E-mail de ${esc(m.name)}">` : `<span class="muted">e-mail inconnu</span>`}</td>
+        <td><button type="button" class="btn small" data-rone="${i}" ${em ? "" : "disabled"} title="Message personnalisé" aria-label="Message personnalisé à ${esc(m.name)}">✉</button></td></tr>`;
+    }).join("")}</tbody></table></div>
+    <label class="f">Objet<input id="rSubj" value="Rappel : mets à jour ton plan de charge"></label>
+    <label class="f">Message<textarea id="rBody" rows="7">${esc(defBody)}</textarea></label>
+    <div class="row-actions"><button type="button" class="btn" id="rCopy">Copier les adresses</button><div class="r"><button type="button" class="btn" id="rCancel">Fermer</button><button class="btn primary" type="submit" id="rSend">Ouvrir dans ma messagerie</button></div></div>
+  </form>`);
+  const emails = () => [...document.querySelectorAll(".rChk:checked")].map(c => memberEmail(list[+c.dataset.ri].m)).filter(Boolean);
+  const sync = () => { const n = emails().length; $("rCount").textContent = `${n} destinataire${n > 1 ? "s" : ""}`; $("rSend").disabled = !n; const all = [...document.querySelectorAll(".rChk:not(:disabled)")]; $("rAll").checked = all.length > 0 && all.every(c => c.checked); };
+  sync();
+  $("rForm").addEventListener("change", async e => {
+    if (e.target.id === "rAll") { document.querySelectorAll(".rChk:not(:disabled)").forEach(c => c.checked = e.target.checked); sync(); return; }
+    if (e.target.classList.contains("rEm")) {
+      const i = +e.target.dataset.ri; const v = e.target.value.trim(); if (!v || !e.target.checkValidity()) return;
+      const m = list[i].m;
+      try { await q(sb.from("members").update({ email: v }).eq("id", m.id)); m.email = v; const c = document.querySelector(`.rChk[data-ri="${i}"]`); c.disabled = false; c.checked = true; document.querySelector(`[data-rone="${i}"]`).disabled = false; toast(`E-mail de ${m.name} enregistré`); } catch (err) { toast(errMsg(err)); }
+    }
+    sync();
+  });
+  $("rForm").addEventListener("click", e => {
+    const b = e.target.closest("[data-rone]"); if (!b) return;
+    const { m, g } = list[+b.dataset.rone];
+    const what = g.never ? "ton planning n'est pas encore rempli" : g.free >= 0.5 ? `il reste ${d1(g.free)} jour${g.free >= 2 ? "s" : ""} non renseigné${g.free >= 2 ? "s" : ""} sur tes 3 prochaines semaines` : g.age == null ? "ton planning n'a pas encore été confirmé" : `ton planning n'a pas été confirmé depuis ${g.age} jours`;
+    const body = `Bonjour ${firstName(m.name)},\n\nPetit rappel : ${what}. Peux-tu le compléter (missions, absences, jours libres) puis cliquer sur « Confirmer le planning » ?\n\n${url}\n\nMerci !\n${sign}`;
+    location.href = mailto(memberEmail(m), null, $("rSubj").value, body);
+  });
+  $("rCopy").onclick = async () => { const list = emails(); if (!list.length) return; try { await navigator.clipboard.writeText(list.join("; ")); toast("Adresses copiées"); } catch (_) { toast(list.join("; ")); } };
+  $("rCancel").onclick = closeModal;
+  $("rForm").addEventListener("submit", e => {
+    e.preventDefault(); const list = emails(); if (!list.length) return;
+    location.href = mailto(state.me.email || "", list, $("rSubj").value, $("rBody").value);
+  });
+}
+
 /* --- consultant (admin) --- */
 function memberModal(id) {
   const admin = isAdmin(); if (!admin) return; const isNew = !id;
@@ -1001,7 +1085,8 @@ function memberModal(id) {
   openModal(`<form class="modal" id="cForm" aria-label="Consultant">
     <h2>${isNew ? "Nouveau consultant" : esc(m.name)}</h2>
     <div class="form-grid">
-      <label class="f full">Nom<input id="cName" required value="${esc(m.name)}"></label>
+      <label class="f">Nom<input id="cName" required value="${esc(m.name)}"></label>
+      <label class="f">E-mail<input type="email" id="cEmail" value="${esc(memberEmail(m))}" placeholder="prenom.nom@${esc(DOMAINS[0] || "datatilt.com")}" ${hasEmailCol() || !state.members.length ? "" : "disabled title=\"Exécute supabase/migration_v3.sql pour activer ce champ\""}></label>
       <label class="f">Groupe<select id="cGroup"><option value="">Sans groupe</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${m.group_id === g.id ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select></label>
       <label class="f">Rôle<select id="cRole">${ROLES.map(r => `<option ${m.role === r ? "selected" : ""}>${r}</option>`).join("")}</select><span class="muted small">Manager et Directeur de projet voient la vue d'ensemble de l'équipe.</span></label>
       <div class="full"><span class="eyebrow">Compétences</span><div class="checks">${SKILLS.map((s, i) => `<label><input type="checkbox" id="cSk${i}" ${(m.skills || []).includes(s) ? "checked" : ""}>${esc(s)}</label>`).join("")}</div></div>
@@ -1014,6 +1099,7 @@ function memberModal(id) {
     e.preventDefault();
     const body = { name: $("cName").value.trim(), group_id: $("cGroup").value || null, role: $("cRole").value, skills: SKILLS.filter((_, i) => $("cSk" + i).checked) };
     if (!body.name) return;
+    if (!$("cEmail").disabled && (hasEmailCol() || $("cEmail").value.trim())) body.email = $("cEmail").value.trim() || null;
     try { await q(isNew ? sb.from("members").insert(body) : sb.from("members").update(body).eq("id", id)); closeModal(); toast(isNew ? "Consultant ajouté" : "Consultant mis à jour"); await after(); } catch (err) { toast(errMsg(err)); }
   });
   const del = $("cDel");
@@ -1058,6 +1144,13 @@ document.addEventListener("click", async e => {
   if (t.id === "btnAddC") { memberModal(null); return; }
   if (t.id === "btnAddM") { missionModal(null); return; }
   if (t.id === "btnBulkM") { bulkMissionModal(); return; }
+  if (t.id === "btnRemind") { remindModal(); return; }
+  if (t.id === "mSelNone") { state.mSel.clear(); render(); return; }
+  if (t.id === "mSelArch" || t.id === "mSelUnarch") { const ids = [...state.mSel]; guard(t, () => q(sb.from("missions").update({ active: t.id === "mSelUnarch" }).in("id", ids)), `${ids.length} mission${ids.length > 1 ? "s" : ""} ${t.id === "mSelUnarch" ? "réactivée" : "archivée"}${ids.length > 1 ? "s" : ""}`); state.mSel.clear(); return; }
+  if (t.id === "mSelDel") {
+    if (t.dataset.armed !== "1") { t.dataset.armed = "1"; t.textContent = `Confirmer la suppression (${state.mSel.size})`; return; }
+    t.disabled = true; deleteMissions([...state.mSel]); return;
+  }
   if (t.id === "btnAssign") { assignModal({ memberId: planTarget() }); return; }
   if (t.id === "btnAbsence") { assignModal({ memberId: planTarget(), absence: true }); return; }
   if (t.id === "btnBackMine") { state.planMember = null; state.planOffset = 0; render(); return; }
@@ -1104,6 +1197,8 @@ document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal()
 document.addEventListener("change", e => {
   if (e.target.id === "optProb") { state.prob = e.target.checked; try { localStorage.setItem("pdc.prob", state.prob ? "1" : "0"); } catch (_) {} render(); }
   if (e.target.id === "gSel") { state.group = e.target.value; try { localStorage.setItem("pdc.g", state.group); } catch (_) {} render(); }
+  if (e.target.id === "mSelAll") { const f = state.mFilter; state.missions.filter(m => f === "toutes" || (f === "actives" ? m.active !== false : m.active === false)).forEach(m => e.target.checked ? state.mSel.add(m.id) : state.mSel.delete(m.id)); render(); return; }
+  if (e.target.classList.contains("mSelChk")) { const id = e.target.dataset.msel; e.target.checked ? state.mSel.add(id) : state.mSel.delete(id); render(); return; }
   if (e.target.id === "gridAdd" && e.target.value) {
     const mid = planTarget(); if (!mid) return; const mis = e.target.value;
     state.gridExtra = state.gridExtra || {}; const ex = state.gridExtra[mid] = state.gridExtra[mid] || []; if (!ex.includes(mis)) ex.push(mis);
