@@ -183,7 +183,7 @@ function kpis() {
   const D = horizonDays(); let net = 0, staffed = 0, bill = 0, avv = 0, free = 0, prob = 0, over = 0, freeWeek = 0; const inter = [];
   for (const c of state.consultants) {
     for (const t of D) { const r = dayCell(c.id, t, state.prob); net += r.net; staffed += r.staffed; bill += r.bill; avv += r.AVV; free += r.free; prob += r.prob; if (r.load != null && r.load > 1.001) over++; }
-    const w = weekCell(c.id, monday(TODAY), state.prob); freeWeek += w.free; if (w.load != null && w.load < 0.5) inter.push(c.name);
+    const w = weekCell(c.id, monday(TODAY), state.prob); freeWeek += w.free; if (w.net > 0.01 && w.bill / w.net < 0.5) inter.push(c.name);
   }
   const fresh = state.consultants.filter(c => { const f = freshness(c); return f.days != null && f.days <= STALE_DAYS; }).length;
   return { occ: net ? staffed / net : null, bill: net ? bill / net : null, avvShare: staffed ? avv / staffed : null, free, freeWeek, prob, over, inter, fresh, total: state.consultants.length };
@@ -197,7 +197,7 @@ function renderKpis(k) {
     ${tile("Taux facturable", pct(k.bill), billCls, `BUILD + RUN · objectif ${Math.round(TARGET_BILL * 100)} %`, g)}
     ${tile("Taux d'occupation", pct(k.occ), "", `dont ${pct(k.avvShare)} en avant-vente IA`)}
     ${tile("Jours disponibles", d1(k.free), "", `${d1(k.freeWeek)} j cette semaine · ${d1(k.prob)} j probables ${state.prob ? "inclus" : "exclus"}`)}
-    ${tile("Intercontrat", k.inter.length, k.inter.length ? "warn" : "good", k.inter.length ? esc(k.inter.slice(0, 3).join(", ")) + (k.inter.length > 3 ? "…" : "") : "Personne sous 50 % cette semaine")}
+    ${tile("Intercontrat", k.inter.length, k.inter.length ? "warn" : "good", k.inter.length ? esc(k.inter.slice(0, 3).join(", ")) + (k.inter.length > 3 ? "…" : "") : "Tout le monde est facturable à 50 % ou plus cette semaine")}
     ${tile("Surcharges", k.over, k.over ? "bad" : "good", k.over ? "jours-consultant au-delà de 100 %" : "Aucun jour au-delà de 100 %")}
     ${tile("Plannings à jour", `${k.fresh}/${k.total}`, fr >= .8 ? "good" : fr >= .5 ? "warn" : "bad", `confirmés il y a moins de ${STALE_DAYS} j`)}
   </section>`;
@@ -294,7 +294,7 @@ function cellHtml(c, r, col, showFree) {
   const label = b === "abs" ? (col.kind === "day" ? "Abs." : "Absent") : (col.kind === "day" ? Math.round(r.load * 100) : pct(r.load));
   return `<td class="c ${b} ${now ? "now" : ""} ${wk}" title="${esc(tip)}">${label}${showFree && b !== "abs" ? `<span class="free">${d1(r.free)} j libres</span>` : ""}${r.prob && state.prob ? '<span class="p" aria-hidden="true"></span>' : ""}${strip ? `<span class="strip">${strip}</span>` : ""}</td>`;
 }
-function legendHtml() { return `<div class="heat-legend"><span><i class="sw" style="background:var(--h-low)"></i>&lt; 50 % · intercontrat</span><span><i class="sw" style="background:var(--h-mid)"></i>50–85 %</span><span><i class="sw" style="background:var(--h-ok)"></i>85–100 % · cible</span><span><i class="sw" style="background:var(--h-over)"></i>&gt; 100 % · surcharge</span><span><i class="sw hatch"></i>Absent ou férié</span><span><i class="p" style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--t-avv)"></i>contient du probable</span></div>`; }
+function legendHtml() { return `<div class="heat-legend"><span><i class="sw" style="background:var(--h-low)"></i>&lt; 50 %</span><span><i class="sw" style="background:var(--h-mid)"></i>50–85 %</span><span><i class="sw" style="background:var(--h-ok)"></i>85–100 % · cible</span><span><i class="sw" style="background:var(--h-over)"></i>&gt; 100 % · surcharge</span><span><i class="sw hatch"></i>Absent ou férié</span><span><i class="p" style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--t-avv)"></i>contient du probable</span></div>`; }
 function renderHeat(cols) {
   const order = [...state.groups.map(g => g.id), ""];
   const byG = order.map(gid => ({ gid, list: state.consultants.filter(c => gid ? c.group_id === gid : !state.groups.some(g => g.id === c.group_id)) })).filter(x => x.list.length);

@@ -137,7 +137,7 @@ Ouvre ensuite <http://localhost:3000>. Pense à ajouter `http://localhost:3000` 
 - **Capacité nette** : 1 jour par jour ouvré, moins les jours fériés français (calculés automatiquement, Pâques inclus) et les absences.
 - **Taux facturable** : (BUILD + RUN) / capacité nette.
 - **Taux d'occupation** : (BUILD + RUN + avant-vente + interne) / capacité nette.
-- **Intercontrat** : consultant sous 50 % de charge sur la semaine en cours.
+- **Intercontrat** : consultant facturable (BUILD + RUN) à moins de 50 % de sa capacité nette sur la semaine en cours. L'interne, l'avant-vente et une mission « Interco » ne comptent pas comme facturable ; un consultant absent toute la semaine n'est pas compté.
 - **Surcharge** : jour où la charge dépasse 100 %.
 - **Planning à jour** : planning modifié ou confirmé il y a moins de 14 jours (paramétrable dans `config.js`).
 - Les missions **probables** peuvent être inclus ou exclus des calculs grâce à l'interrupteur.
