@@ -554,7 +554,7 @@ function viewMissions() {
       <td class="small">${who.length ? esc(who.map(cName).join(", ")) : `<span class="muted">Personne</span>`}</td><td class="mono">${d1(charge)} j</td>
       <td style="white-space:nowrap"><button class="btn small" data-mi="${esc(m.id)}">Modifier</button> ${m.active !== false ? `<button class="btn small" data-massign="${esc(m.id)}">Affecter</button>` : ""}</td></tr>`;
   }).join("");
-  return `<div class="bar"><div class="seg" role="group" aria-label="Filtre">${[["actives", "Actives"], ["archivees", "Archivées"], ["toutes", "Toutes"]].map(([k, l]) => `<button data-mf="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div><button class="btn primary" id="btnAddM">+ Mission</button></div>
+  return `<div class="bar"><div class="seg" role="group" aria-label="Filtre">${[["actives", "Actives"], ["archivees", "Archivées"], ["toutes", "Toutes"]].map(([k, l]) => `<button data-mf="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div><div class="bar"><button class="btn" id="btnBulkM">Import en masse</button><button class="btn primary" id="btnAddM">+ Mission</button></div></div>
   <section class="panel"><div class="panel-head"><h2>Catalogue des missions</h2><span class="eyebrow">${list.length} mission${list.length > 1 ? "s" : ""}</span></div>
     <p class="muted small">Les collaborateurs choisissent dans ce catalogue. Une mission sans date de fin (ex. BUILD à l'année, TMA) remplit leur planning en continu. Les missions de type Absence (congés, temps partiel) sont proposées à tous dans « Poser une absence ».</p>
     <div class="scroll"><table class="list"><thead><tr><th>Mission</th><th>Type</th><th>Statut</th><th>Période</th><th>Consultants</th><th>Charge 3 sem.</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="7" class="empty-note">Aucune mission. Commence par « + Mission ».</td></tr>`}</tbody></table></div></section>`;
@@ -860,6 +860,83 @@ function assignModal({ memberId, aId, missionId, absence, pickMember }) {
 }
 
 /* --- mission (admin) --- */
+/* --- import de missions en masse (copier-coller depuis Excel ou une ligne par mission) --- */
+const normTxt = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+function parseType(s, def) {
+  const x = normTxt(s); if (!x) return def;
+  if (x.startsWith("build")) return "BUILD";
+  if (x.startsWith("run") || x.includes("tma")) return "RUN";
+  if (x.startsWith("avv") || x.includes("avant") || x.includes("poc") || x.includes("presales")) return "AVV";
+  if (x.startsWith("int") || x.includes("formation")) return "INTERNE";
+  if (x.startsWith("abs") || x.includes("conge")) return "ABSENCE";
+  return null;
+}
+function parseStatus(s, def) { const x = normTxt(s); if (!x) return def; if (x.startsWith("prob") || x.includes("pipe")) return "probable"; if (x.startsWith("ferm") || x.startsWith("sign") || x.startsWith("conf")) return "ferme"; return null; }
+function parseDateFr(s) {
+  const x = String(s || "").trim(); if (!x || /^(-|–|sans( fin)?|aucune)$/i.test(x)) return { v: null };
+  let m = x.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/); if (m) return { v: `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}` };
+  m = x.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2}|\d{4})$/);
+  if (m) { const y = m[3].length === 2 ? "20" + m[3] : m[3]; const mo = +m[2], d = +m[1]; if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return { v: `${y}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}` }; }
+  return { err: true };
+}
+function bulkMissionModal() {
+  if (!isAdmin()) return;
+  openModal(`<form class="modal wide" id="bForm" aria-label="Import de missions en masse">
+    <h2>Import de missions en masse</h2>
+    <p class="muted small">Colle les lignes copiées depuis Excel (une mission par ligne), ou sépare les colonnes par « ; ». Ordre des colonnes : <strong>Client ; Nom ; Type ; Statut ; Début ; Fin</strong>. Seul le nom est obligatoire et une ligne d'en-tête est ignorée. Avec une seule colonne, c'est le nom ; avec deux, le client puis le nom. Fin vide = sans date de fin.</p>
+    <textarea id="bText" rows="8" spellcheck="false" placeholder="L'Oréal;Budget PA 2027;BUILD;ferme;01/11/2026;30/06/2027&#10;IGESA;TMA Board;RUN;ferme;01/01/2027;&#10;Michelin;POC IA prévisions;Avant-vente;probable;15/11/2026;15/12/2026"></textarea>
+    <div class="form-grid">
+      <label class="f">Type par défaut<select id="bType">${TYPE_ORDER.map(k => `<option value="${k}">${TYPES[k].label}</option>`).join("")}</select></label>
+      <label class="f">Statut par défaut<select id="bStatus"><option value="ferme">Ferme</option><option value="probable">Probable</option></select></label>
+      <label class="f">Début par défaut<input type="date" id="bStart" value="${iso(TODAY)}"></label>
+      <div class="checks" style="align-self:end"><label><input type="checkbox" id="bSkipDup" checked> Ignorer les missions déjà au catalogue</label></div>
+    </div>
+    <div class="scroll" id="bPrev"></div>
+    <div class="row-actions"><span class="muted small" id="bSum"></span><div class="r"><button type="button" class="btn" id="bCancel">Annuler</button><button class="btn primary" type="submit" id="bSave" disabled>Créer</button></div></div>
+  </form>`);
+  const existing = new Set(state.missions.map(m => normTxt(m.client) + "|" + normTxt(m.name)));
+  const compute = () => {
+    const defT = $("bType").value, defS = $("bStatus").value, defStart = $("bStart").value || null, skip = $("bSkipDup").checked;
+    const seen = new Set(); const items = [];
+    $("bText").value.split(/\r?\n/).filter(l => l.trim()).forEach((line, i) => {
+      let c = line.split(line.includes("\t") ? "\t" : ";").map(x => x.trim());
+      if (i === 0 && c.some(x => ["nom", "mission", "nom de la mission"].includes(normTxt(x)))) return;
+      if (c.length === 1) c = ["", c[0]];
+      const [client = "", name = "", ty = "", st = "", d1 = "", d2 = ""] = c;
+      const a = parseDateFr(d1), b = parseDateFr(d2);
+      const it = { client, name, type: parseType(ty, defT), status: parseStatus(st, defS), start_date: d1 ? a.v : defStart, end_date: b.v || null, errs: [] };
+      if (!name) it.errs.push("nom manquant");
+      if (!it.type) it.errs.push(`type « ${ty} » inconnu`);
+      if (!it.status) it.errs.push(`statut « ${st} » inconnu`);
+      if (a.err) it.errs.push(`début « ${d1} » illisible`);
+      if (b.err) it.errs.push(`fin « ${d2} » illisible`);
+      if (it.start_date && it.end_date && parse(it.end_date) < parse(it.start_date)) it.errs.push("fin avant début");
+      const k = normTxt(client) + "|" + normTxt(name);
+      if (name && seen.has(k)) it.dup = "en double dans la liste"; else if (name && existing.has(k)) it.dup = "déjà au catalogue";
+      it.skip = !!it.dup && (skip || it.dup === "en double dans la liste");
+      seen.add(k); items.push(it);
+    });
+    const ok = items.filter(it => !it.errs.length && !it.skip);
+    $("bPrev").innerHTML = items.length ? `<table class="list"><thead><tr><th>Client</th><th>Nom</th><th>Type</th><th>Statut</th><th>Période</th><th></th></tr></thead><tbody>${items.map(it => `<tr${it.errs.length ? ' class="bad"' : ""}><td>${esc(it.client)}</td><td><strong>${esc(it.name)}</strong></td><td>${it.type ? typeTag(it.type) : "?"}</td><td class="small">${it.status === "probable" ? "Probable" : it.status ? "Ferme" : "?"}</td><td class="mono small" style="white-space:nowrap">${it.start_date ? frDate(parse(it.start_date)) : "—"} → ${it.end_date ? frDate(parse(it.end_date)) : "sans fin"}</td><td class="small">${it.errs.length ? `<span style="color:var(--bad)">${esc(it.errs.join(", "))}</span>` : it.dup ? `<span class="muted">${esc(it.dup)}${it.skip ? " · ignorée" : ""}</span>` : "✓"}</td></tr>`).join("")}</tbody></table>` : "";
+    const nErr = items.filter(it => it.errs.length).length;
+    $("bSum").textContent = items.length ? `${ok.length} à créer${nErr ? ` · ${nErr} ligne${nErr > 1 ? "s" : ""} en erreur, non créée${nErr > 1 ? "s" : ""}` : ""}` : "";
+    $("bSave").disabled = !ok.length; $("bSave").textContent = ok.length ? `Créer ${ok.length} mission${ok.length > 1 ? "s" : ""}` : "Créer";
+    return ok;
+  };
+  $("bForm").addEventListener("input", compute); $("bForm").addEventListener("change", compute);
+  $("bCancel").onclick = closeModal;
+  $("bText").focus();
+  $("bForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const ok = compute(); if (!ok.length) return;
+    $("bSave").disabled = true;
+    try {
+      const rows = ok.map(it => ({ client: it.client, name: it.name, type: it.type, status: it.status, start_date: it.start_date, end_date: it.end_date, active: true }));
+      for (let i = 0; i < rows.length; i += 500) await q(sb.from("missions").insert(rows.slice(i, i + 500)));
+      closeModal(); toast(`${rows.length} mission${rows.length > 1 ? "s créées" : " créée"}`); await after();
+    } catch (err) { toast(errMsg(err)); const sv = $("bSave"); if (sv) sv.disabled = false; }
+  });
+}
 function missionModal(id) {
   if (!isAdmin()) return;
   const isNew = !id; const m = missionById(id) || { client: "", name: "", type: "BUILD", status: "ferme", start_date: iso(TODAY), end_date: null, active: true };
@@ -957,6 +1034,7 @@ document.addEventListener("click", async e => {
   if (d.c) { memberModal(d.c); return; }
   if (t.id === "btnAddC") { memberModal(null); return; }
   if (t.id === "btnAddM") { missionModal(null); return; }
+  if (t.id === "btnBulkM") { bulkMissionModal(); return; }
   if (t.id === "btnAssign") { assignModal({ memberId: planTarget() }); return; }
   if (t.id === "btnAbsence") { assignModal({ memberId: planTarget(), absence: true }); return; }
   if (t.id === "btnBackMine") { state.planMember = null; state.planOffset = 0; render(); return; }
