@@ -403,7 +403,7 @@ function viewPlanning() {
   for (const id of (state.gridExtra || {})[m.id] || []) { const x = missionById(id); if (x && !rowsMap.has(id)) rows.push({ m: x, vals: new Map() }); }
   const head = headRows(days.map(t => ({ t, kind: "day" })), `<th class="lbl">Mission</th>`);
   const cellBtn = (d, inner) => ro ? inner : `<button data-day="${d}" aria-label="Modifier le ${esc(frLong(d))}">${inner}</button>`;
-  const body = rows.map(row => `<tr><th class="lbl" scope="row"><span class="mrow"><i class="dot" style="background:${TYPES[row.m.type].color}"></i><span>${esc(row.m.name)}<small>${esc(row.m.client || TYPES[row.m.type].label)}${row.m.status === "probable" ? " · probable" : ""}</small></span></span></th>${days.map((d, i) => {
+  const body = rows.map(row => `<tr><th class="lbl" scope="row"><span class="mrow"><i class="dot" style="background:${TYPES[row.m.type].color}"></i><span>${esc(row.m.name)}<small>${esc(row.m.client || TYPES[row.m.type].label)}${row.m.status === "probable" ? " · probable" : ""}</small></span>${ro ? "" : `<button class="rowdel" data-rowdel="${esc(row.m.id)}" data-from="${days[0]}" title="Retirer cette mission des 3 semaines affichées" aria-label="Retirer ${esc(row.m.name)} des 3 semaines affichées">✕</button>`}</span></th>${days.map((d, i) => {
       const wk = wdIdx(d) === 1 ? "wk" : "";
       if (!totals[i]) return `<td class="v hol ${wk}">Férié</td>`;
       const v = row.vals.get(d); const ex = totals[i].explicit ? "ex" : "";
@@ -502,6 +502,24 @@ function openCell(btn) {
     else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false, 0); }
   });
   inp.addEventListener("blur", () => finish(true, 0));
+}
+/* retire une mission de toutes les journées affichées (les autres missions du jour sont conservées) */
+async function removeRow(mid, mis, from) {
+  const ex = (state.gridExtra || {})[mid]; if (ex) state.gridExtra[mid] = ex.filter(x => x !== mis);
+  const touched = threeWeeks(from).filter(d => isWorkday(d) && dayRows(mid, d).some(r => r.mission === mis));
+  if (!touched.length) { render(); return; }
+  const ins = [];
+  for (const d of touched) {
+    const rows = dayRows(mid, d).filter(r => r.mission !== mis && r.pct > 0);
+    if (rows.length) rows.forEach(r => ins.push({ member_id: mid, day: iso(d), mission_id: r.mission, pct: r.pct })); else ins.push({ member_id: mid, day: iso(d), mission_id: null, pct: 0 });
+  }
+  try {
+    await q(sb.from("day_entries").delete().eq("member_id", mid).in("day", touched.map(iso)));
+    await q(sb.from("day_entries").insert(ins));
+    await touchStatus(mid, "updated_at");
+    toast(`Mission retirée de ${touched.length} jour${touched.length > 1 ? "s" : ""}`);
+  } catch (err) { toast(errMsg(err)); }
+  await after();
 }
 async function saveCell(mid, t, mis, v, next) {
   const rows = dayRows(mid, t).filter(r => r.mission !== mis && r.pct > 0);
@@ -1025,6 +1043,11 @@ document.addEventListener("click", async e => {
   if (d.nav !== undefined) { state.planOffset = +d.nav === 0 ? 0 : state.planOffset + +d.nav; render(); return; }
   if (d.day) { const mid = planTarget(); if (mid) dayModal(mid, +d.day); return; }
   if (d.cell) { openCell(t); return; }
+  if (d.rowdel) {
+    const mid = planTarget(); if (!mid) return;
+    if (t.dataset.armed !== "1") { t.dataset.armed = "1"; t.textContent = "Retirer ?"; t.classList.add("armed"); setTimeout(() => { if (t.isConnected) { t.dataset.armed = ""; t.textContent = "✕"; t.classList.remove("armed"); } }, 4000); return; }
+    t.disabled = true; removeRow(mid, d.rowdel, +d.from); return;
+  }
   if (d.qd) { const mid = planTarget(); if (mid && t.getAttribute("aria-pressed") !== "true") quickDay(mid, +d.qd, d.qk, t); return; }
   if (d.wnav !== undefined) { state.weekOffset = +d.wnav === 0 ? 0 : state.weekOffset + +d.wnav; render(); return; }
   if (d.plan) { state.planMember = d.plan; state.planOffset = 0; state.tab = "moi"; render(); window.scrollTo(0, 0); return; }

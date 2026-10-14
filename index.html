@@ -212,6 +212,12 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--bg);b
 .dgrid td.v input.cin::-webkit-outer-spin-button,.dgrid td.v input.cin::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .dgrid td.v .cin-wait{display:flex;align-items:center;justify-content:center;min-height:42px;opacity:.5}
 .dgrid td.v.ex::after{content:"";position:absolute;top:4px;right:4px;width:5px;height:5px;border-radius:50%;background:var(--ink);opacity:.5;pointer-events:none}
+.dgrid .mrow{width:100%}
+.dgrid .rowdel{margin-left:auto;align-self:center;border:1px solid transparent;background:none;color:var(--muted);border-radius:6px;padding:2px 7px;font-size:.75rem;cursor:pointer;opacity:0;white-space:nowrap}
+.dgrid tr:hover .rowdel,.dgrid .rowdel:focus-visible,.dgrid .rowdel.armed{opacity:1}
+.dgrid .rowdel:hover{border-color:var(--line);color:var(--ink)}
+.dgrid .rowdel.armed{color:var(--bad);border-color:var(--bad)}
+@media (hover:none){.dgrid .rowdel{opacity:1}}
 .dgrid tr.addrow .lbl{padding:6px 8px}
 .dgrid tr.addrow select{width:100%;font-size:.82rem}
 .dgrid tr.total td.v{font-weight:600;height:46px}
