@@ -15,5 +15,8 @@ window.APP_CONFIG = {
   TARGET_BILLABLE: 0.8,
 
   // Nombre de jours après lequel un planning est considéré "à relancer"
-  STALE_DAYS: 14
+  STALE_DAYS: 14,
+
+  // Alertes « Compétence fragile » (compétence détenue par 0 ou 1 consultant) : true pour les afficher
+  SKILL_ALERTS: false
 };

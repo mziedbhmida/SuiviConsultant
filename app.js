@@ -245,7 +245,7 @@ function alerts() {
   }
   const stale = state.consultants.filter(c => { const f = freshness(c); return f.days == null || f.days > STALE_DAYS; });
   if (stale.length) out.push({ lvl: "warn", w: 1.5, t: `${stale.length} planning${stale.length > 1 ? "s" : ""} à relancer`, m: esc(stale.map(c => c.name).join(", ")) + ` · pas de confirmation depuis plus de ${STALE_DAYS} j` });
-  for (const sk of SKILLS) {
+  if (CFG.SKILL_ALERTS) for (const sk of SKILLS) {
     const who = state.members.filter(c => (c.skills || []).includes(sk));
     if (state.members.length >= 3 && who.length <= 1) out.push({ lvl: "info", w: 1, t: `Compétence fragile : ${esc(sk)}`, m: who.length ? `Seul(e) ${esc(who[0].name)} la détient · prévoir un binôme ou une formation` : "Aucun consultant ne la détient" });
   }
