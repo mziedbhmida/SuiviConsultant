@@ -404,7 +404,7 @@ function viewPlanning() {
   for (const id of (state.gridExtra || {})[m.id] || []) { const x = missionById(id); if (x && !rowsMap.has(id)) rows.push({ m: x, vals: new Map() }); }
   const head = headRows(days.map(t => ({ t, kind: "day" })), `<th class="lbl">Mission</th>`);
   const cellBtn = (d, inner) => ro ? inner : `<button data-day="${d}" aria-label="Modifier le ${esc(frLong(d))}">${inner}</button>`;
-  const body = rows.map(row => `<tr><th class="lbl" scope="row"><span class="mrow"><i class="dot" style="background:${TYPES[row.m.type].color}"></i><span>${esc(row.m.name)}<small>${esc(row.m.client || TYPES[row.m.type].label)}${row.m.status === "probable" ? " · probable" : ""}</small></span>${ro ? "" : `<button class="rowdel" data-rowdel="${esc(row.m.id)}" data-from="${days[0]}" title="Retirer cette mission des 3 semaines affichées" aria-label="Retirer ${esc(row.m.name)} des 3 semaines affichées">✕</button>`}</span></th>${days.map((d, i) => {
+  const body = rows.map(row => `<tr><th class="lbl" scope="row"><span class="mrow"><i class="dot" style="background:${TYPES[row.m.type].color}"></i>${ro ? "<span>" : `<button class="rowsel" data-rowsel="${esc(row.m.id)}" title="Sélectionner la ligne pour la remplir en bloc">`}${esc(row.m.name)}<small>${esc(row.m.client || TYPES[row.m.type].label)}${row.m.status === "probable" ? " · probable" : ""}</small>${ro ? "</span>" : "</button>"}${ro ? "" : `<button class="rowdel" data-rowdel="${esc(row.m.id)}" data-from="${days[0]}" title="Retirer cette mission des 3 semaines affichées" aria-label="Retirer ${esc(row.m.name)} des 3 semaines affichées">✕</button>`}</span></th>${days.map((d, i) => {
       const wk = wdIdx(d) === 1 ? "wk" : "";
       if (!totals[i]) return `<td class="v hol ${wk}">Férié</td>`;
       const v = row.vals.get(d); const ex = totals[i].explicit ? "ex" : "";
@@ -433,8 +433,9 @@ function viewPlanning() {
   ${ro ? "" : weekCards(m)}
   <section class="panel"><div class="panel-head"><h2>Vue sur 3 semaines</h2>
     <div class="navw"><span class="eyebrow">${d1(free)} j libres</span><button class="btn small" data-nav="-1" aria-label="Semaine précédente">←</button><button class="btn small" data-nav="0">Aujourd'hui</button><button class="btn small" data-nav="1" aria-label="Semaine suivante">→</button></div></div>
+    ${ro ? "" : `<form class="gselbar" id="gselBar" hidden><span id="gselInfo"></span><label>Mettre<input type="number" id="gselVal" min="0" max="100" step="1" inputmode="numeric" placeholder="%" aria-label="Pourcentage à appliquer"> %</label><button class="btn small primary" type="submit">Appliquer</button><button class="btn small" type="button" id="gselZero">Vider</button><button class="btn small" type="button" id="gselCancel">Annuler</button></form>`}
     <div class="scroll"><table class="dgrid"><thead>${head}</thead><tbody>${body}${emptyRow}${addRow}${totalRow}</tbody></table></div>
-    <p class="muted small">${ro ? "" : "Clique sur une case pour saisir le % directement (Entrée ou Tab pour valider, Échap pour annuler, 0 pour retirer). Clique sur la charge du jour pour poser une absence ou ajouter une autre mission. "}Les valeurs sont en % de la journée. Un point signale un jour ajusté manuellement.</p></section>
+    <p class="muted small">${ro ? "" : "Clique sur une case pour saisir le % (Entrée ou Tab pour valider, Échap pour annuler, 0 pour retirer). Pour remplir en bloc : glisse sur plusieurs cases, Maj+clic, ou clique sur le nom d'une mission pour prendre ses 3 semaines. Clique sur la charge du jour pour poser une absence ou ajouter une autre mission. "}Les valeurs sont en % de la journée. Un point signale un jour ajusté manuellement.</p></section>
   <section class="panel"><div class="panel-head"><h2>Missions récurrentes</h2><span class="eyebrow">remplissent automatiquement le planning</span></div>
     <div class="scroll"><table class="list"><thead><tr><th>Mission</th><th>Type</th><th>Statut</th><th>Temps</th><th>Jours</th><th>Période</th><th>Fin dans</th><th></th></tr></thead><tbody>${assignRows(work, false) || `<tr><td colspan="8" class="empty-note">Aucune mission récurrente${ro ? "." : " : « + Affecter à une mission » pour en ajouter une."}</td></tr>`}</tbody></table></div></section>
   ${absn.length ? `<section class="panel"><div class="panel-head"><h2>Absences à venir</h2></div><div class="scroll"><table class="list"><thead><tr><th>Motif</th><th>Type</th><th></th><th>Temps</th><th>Jours</th><th>Période</th><th>Fin dans</th><th></th></tr></thead><tbody>${assignRows(absn, false)}</tbody></table></div></section>` : ""}`;
@@ -469,6 +470,69 @@ function weekCards(m) {
     <div class="navw"><button class="btn small" data-wnav="-1" aria-label="Semaine précédente">←</button><button class="btn small" data-wnav="0">Cette semaine</button><button class="btn small" data-wnav="1" aria-label="Semaine suivante">→</button></div></div>
     <ul class="week">${cards}</ul></section>`;
 }
+/* ================= saisie en bloc : sélection de plusieurs cases (glisser, Maj+clic, clic sur le nom de la mission) ================= */
+let gsel = null, gselDrag = false, gselMoved = false, gselNoClick = false;
+function gridMatrix() {
+  const table = document.querySelector("table.dgrid"); if (!table) return null;
+  return [...table.querySelectorAll("tbody tr")].filter(tr => tr.querySelector("button[data-cell]")).map(tr => [...tr.querySelectorAll("td.v")]);
+}
+function cellPos(btn) { const M = gridMatrix(); if (!M) return null; const td = btn.closest("td"); for (let r = 0; r < M.length; r++) { const c = M[r].indexOf(td); if (c >= 0) return { r, c }; } return null; }
+function gselCells() {
+  const M = gridMatrix(); if (!gsel || !M) return [];
+  const [r0, r1] = [gsel.a.r, gsel.b.r].sort((x, y) => x - y), [c0, c1] = [gsel.a.c, gsel.b.c].sort((x, y) => x - y);
+  const out = []; for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) { const b = M[r] && M[r][c] && M[r][c].querySelector("button[data-cell]"); if (b) out.push(b); }
+  return out;
+}
+function gselPaint() {
+  document.querySelectorAll("table.dgrid td.gsel").forEach(td => td.classList.remove("gsel"));
+  const cells = gselCells(); cells.forEach(b => b.parentElement.classList.add("gsel"));
+  const bar = $("gselBar"); if (!bar) return;
+  if (cells.length < 2) { bar.hidden = true; cellEditing = false; return; }
+  cellEditing = true; bar.hidden = false;
+  const days = new Set(cells.map(b => b.dataset.cell)).size, mis = new Set(cells.map(b => b.dataset.mis)).size;
+  $("gselInfo").textContent = `${cells.length} cases · ${days} jour${days > 1 ? "s" : ""}${mis > 1 ? ` · ${mis} missions` : ""}`;
+  const inp = $("gselVal"); if (document.activeElement !== inp) { inp.focus(); inp.select(); }
+}
+function gselClear() { gsel = null; gselPaint(); }
+function gselRow(btn) { const M = gridMatrix(); const pos = cellPos(btn); if (!M || !pos) return; const row = M[pos.r]; gsel = { a: { r: pos.r, c: 0 }, b: { r: pos.r, c: row.length - 1 } }; gselPaint(); }
+async function gselApply(v) {
+  const cells = gselCells(); const mid = planTarget(); const m = mid && memberById(mid);
+  if (!cells.length || !m || !canEditMember(m)) return;
+  v = Math.max(0, Math.min(100, Math.round(+v || 0)));
+  const byDay = new Map(); for (const b of cells) { const t = +b.dataset.cell; (byDay.get(t) || byDay.set(t, new Set()).get(t)).add(b.dataset.mis); }
+  const days = [...byDay.keys()]; const ins = [];
+  for (const t of days) {
+    const set = byDay.get(t);
+    const rows = dayRows(mid, t).filter(r => !set.has(r.mission) && r.pct > 0);
+    if (v > 0) set.forEach(mis => rows.push({ mission: mis, pct: v }));
+    if (rows.length) rows.forEach(r => ins.push({ member_id: mid, day: iso(t), mission_id: r.mission, pct: r.pct })); else ins.push({ member_id: mid, day: iso(t), mission_id: null, pct: 0 });
+  }
+  $("gselBar").querySelectorAll("button,input").forEach(x => x.disabled = true);
+  try {
+    await q(sb.from("day_entries").delete().eq("member_id", mid).in("day", days.map(iso)));
+    for (let i = 0; i < ins.length; i += 500) await q(sb.from("day_entries").insert(ins.slice(i, i + 500)));
+    await touchStatus(mid, "updated_at");
+    toast(`${days.length} jour${days.length > 1 ? "s" : ""} mis à jour`);
+  } catch (err) { toast(errMsg(err)); }
+  gsel = null; cellEditing = false; await after();
+}
+document.addEventListener("mousedown", e => {
+  if (e.button !== 0) return;
+  const b = e.target.closest("table.dgrid button[data-cell]");
+  if (!b) { if (gsel && !e.target.closest("#gselBar")) gselClear(); return; }
+  const pos = cellPos(b); if (!pos) return;
+  if (e.shiftKey && gsel) { e.preventDefault(); gsel.b = pos; gselNoClick = true; gselPaint(); return; }
+  gsel = { a: pos, b: pos }; gselDrag = true; gselMoved = false; gselPaint();
+});
+document.addEventListener("mouseover", e => {
+  if (!gselDrag || !gsel) return;
+  const b = e.target.closest("table.dgrid button[data-cell]"); if (!b) return;
+  const pos = cellPos(b); if (!pos || (pos.r === gsel.b.r && pos.c === gsel.b.c)) return;
+  gsel.b = pos; gselMoved = true; e.preventDefault(); gselPaint();
+});
+document.addEventListener("mouseup", () => { if (!gselDrag) return; gselDrag = false; if (gselMoved) gselNoClick = true; else gsel = gsel && { a: gsel.a, b: gsel.a }; });
+document.addEventListener("selectstart", e => { if (gselDrag) e.preventDefault(); });
+
 /* ================= saisie directe dans la grille ================= */
 let cellEditing = false, cellQueue = Promise.resolve();
 function dayRows(mid, t) {
@@ -1149,7 +1213,10 @@ document.addEventListener("click", async e => {
   if (d.mf) { state.mFilter = d.mf; render(); return; }
   if (d.nav !== undefined) { state.planOffset = +d.nav === 0 ? 0 : state.planOffset + +d.nav; render(); return; }
   if (d.day) { const mid = planTarget(); if (mid) dayModal(mid, +d.day); return; }
-  if (d.cell) { openCell(t); return; }
+  if (d.cell) { if (gselNoClick) { gselNoClick = false; return; } if (gsel && gselCells().length > 1) return; gsel = null; gselPaint(); openCell(t); return; }
+  if (d.rowsel) { gselRow(t.closest("tr").querySelector("button[data-cell]")); return; }
+  if (t.id === "gselZero") { gselApply(0); return; }
+  if (t.id === "gselCancel") { gselClear(); return; }
   if (d.rowdel) {
     const mid = planTarget(); if (!mid) return;
     if (t.dataset.armed !== "1") { t.dataset.armed = "1"; t.textContent = "Retirer ?"; t.classList.add("armed"); setTimeout(() => { if (t.isConnected) { t.dataset.armed = ""; t.textContent = "✕"; t.classList.remove("armed"); } }, 4000); return; }
@@ -1206,6 +1273,7 @@ document.addEventListener("click", async e => {
   }
 });
 document.addEventListener("submit", e => {
+  if (e.target.id === "gselBar") { e.preventDefault(); const v = $("gselVal").value.trim(); if (v !== "") gselApply(v); return; }
   if (e.target.id === "gAddForm") { e.preventDefault(); const v = $("gNew").value.trim(); if (v) guard(null, () => q(sb.from("groups").insert({ name: v })), "Groupe ajouté"); }
   if (e.target.id === "adAddForm") {
     e.preventDefault(); const v = $("adNew").value.trim().toLowerCase(); if (!v) return;
@@ -1214,7 +1282,7 @@ document.addEventListener("submit", e => {
   }
   if (e.target.id === "loginForm") { e.preventDefault(); sendLink($("loginEmail").value); }
 });
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") { if (gsel) gselClear(); closeModal(); } });
 document.addEventListener("change", e => {
   if (e.target.id === "optProb") { state.prob = e.target.checked; try { localStorage.setItem("pdc.prob", state.prob ? "1" : "0"); } catch (_) {} render(); }
   if (e.target.id === "gSel") { state.group = e.target.value; try { localStorage.setItem("pdc.g", state.group); } catch (_) {} render(); }
