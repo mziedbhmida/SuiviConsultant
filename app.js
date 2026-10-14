@@ -25,7 +25,7 @@ const HORIZONS = [3, 8, 12];
 
 const state = {
   tab: null, h: 3, prob: true, group: "", filter: "", mFilter: "actives",
-  planMember: null, planOffset: 0, weekOffset: 0,
+  planMember: null, planOffset: 0,
   me: { id: null, email: "", isAdmin: false },
   members: [], groups: [], claims: [], missions: [], assign: [], entries: [], status: {}, admins: [],
   consultants: [], loaded: false
@@ -430,7 +430,6 @@ function viewPlanning() {
   <section class="panel hello"><div><span class="eyebrow">${esc(groupName(m.group_id))} · ${esc(m.role || "")}</span><h2 style="font-size:1.4rem">${esc(m.name)}</h2>
     <p class="${stale ? "" : "muted"}" style="${stale ? "color:var(--warn)" : ""}">${freshTxt}${stale && !ro ? " Vérifie tes 3 prochaines semaines puis confirme." : ""}</p></div>
     ${ro ? "" : `<div class="actions"><button class="btn" id="btnConfirm">Confirmer le planning</button><button class="btn" id="btnAbsence">Poser une absence</button><button class="btn primary" id="btnAssign">+ Affecter à une mission</button></div>`}</section>
-  ${ro ? "" : weekCards(m)}
   <section class="panel"><div class="panel-head"><h2>Vue sur 3 semaines</h2>
     <div class="navw"><span class="eyebrow">${d1(free)} j libres</span><button class="btn small" data-nav="-1" aria-label="Semaine précédente">←</button><button class="btn small" data-nav="0">Aujourd'hui</button><button class="btn small" data-nav="1" aria-label="Semaine suivante">→</button></div></div>
     ${ro ? "" : `<form class="gselbar" id="gselBar" hidden><span id="gselInfo"></span><label>Mettre<input type="number" id="gselVal" min="0" max="100" step="1" inputmode="numeric" placeholder="%" aria-label="Pourcentage à appliquer"> %</label><button class="btn small primary" type="submit">Appliquer</button><button class="btn small" type="button" id="gselZero">Vider</button><span class="sep" aria-hidden="true"></span><button class="btn small" type="button" data-gk="abs">Absent</button><button class="btn small" type="button" data-gk="half">½ journée d'absence</button><button class="btn small" type="button" data-gk="normal">Comme prévu</button><button class="btn small" type="button" id="gselCancel">Annuler</button></form>`}
@@ -441,35 +440,8 @@ function viewPlanning() {
   ${absn.length ? `<section class="panel"><div class="panel-head"><h2>Absences à venir</h2></div><div class="scroll"><table class="list"><thead><tr><th>Motif</th><th>Type</th><th></th><th>Temps</th><th>Jours</th><th>Période</th><th>Fin dans</th><th></th></tr></thead><tbody>${assignRows(absn, false)}</tbody></table></div></section>` : ""}`;
 }
 
-/* ================= « Ma semaine » : saisie en 1 clic ================= */
+/* motif d'absence par défaut */
 const absenceMission = () => state.missions.find(x => x.type === "ABSENCE" && x.active !== false && x.name === "Congés / absence") || state.missions.find(x => x.type === "ABSENCE" && x.active !== false);
-function dayKind(r) {
-  if (!r.explicit) return "normal";
-  if (!r.parts.length) return "free";
-  const abs = r.parts.filter(p => p.m.type === "ABSENCE").reduce((s, p) => s + p.pct, 0);
-  if (abs >= 100) return "abs";
-  if (abs === 50) return "half";
-  return "custom";
-}
-const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
-function weekCards(m) {
-  const mon = monday(TODAY) + state.weekOffset * 7 * DAY;
-  const absM = absenceMission();
-  const cards = [0, 1, 2, 3, 4].map(i => {
-    const t = mon + i * DAY; const title = cap(new Date(t).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", timeZone: "UTC" }));
-    if (!isWorkday(t)) return `<li class="wcard hol"><div class="wd"><span>${title}</span></div><p class="muted small">Jour férié</p></li>`;
-    const r = dayCell(m.id, t, true); const k = dayKind(r);
-    const lines = r.parts.length ? r.parts.map(p => `<li><i class="dot" style="background:${TYPES[p.m.type].color}"></i><span title="${esc(missionLabel(p.m))}">${esc(p.m.name)}</span><b>${Math.round(p.pct)} %</b></li>`).join("") : `<li class="muted">Libre</li>`;
-    const btn = (kind, label, dis) => `<button class="qbtn" data-qd="${t}" data-qk="${kind}" aria-pressed="${k === kind}" ${dis ? "disabled" : ""}>${label}</button>`;
-    const loadTxt = r.load == null ? "Absent" : Math.round(r.load * 100) + " %";
-    return `<li class="wcard ${t === TODAY ? "today" : ""} ${band(r)}"><div class="wd"><span>${title}</span><span class="mono">${loadTxt}</span></div><ul class="wparts">${lines}</ul>
-      <div class="qbtns">${btn("normal", "Comme prévu")}${btn("abs", "Absent", !absM)}${btn("half", "½ journée", !absM)}${btn("free", "Libre")}<button class="qbtn more" data-day="${t}">Autre…</button></div></li>`;
-  }).join("");
-  const label = state.weekOffset === 0 ? "Cette semaine" : state.weekOffset === 1 ? "Semaine prochaine" : `Semaine ${isoWeek(mon)}`;
-  return `<section class="panel"><div class="panel-head"><div><h2>${label}</h2><span class="muted small">S${isoWeek(mon)} · du ${frDate(mon)} au ${frDate(mon + 4 * DAY)} · un clic suffit</span></div>
-    <div class="navw"><button class="btn small" data-wnav="-1" aria-label="Semaine précédente">←</button><button class="btn small" data-wnav="0">Cette semaine</button><button class="btn small" data-wnav="1" aria-label="Semaine suivante">→</button></div></div>
-    <ul class="week">${cards}</ul></section>`;
-}
 /* ================= saisie en bloc : sélection de plusieurs cases (glisser, Maj+clic, clic sur le nom de la mission) ================= */
 let gsel = null, gselDrag = false, gselMoved = false, gselNoClick = false;
 function gridMatrix() {
@@ -633,18 +605,6 @@ function kindRows(mid, t, kind) {
   const rows = [{ mission: a.id, pct: 50 }];
   for (const p of work) { const v = Math.max(5, Math.round(Math.min(100, p.pct) / 2 / 5) * 5); const x = rows.find(r => r.mission === p.id); if (x) x.pct = Math.min(100, x.pct + v); else rows.push({ mission: p.id, pct: v }); }
   return rows;
-}
-async function quickDay(mid, t, kind, btn) {
-  const m = memberById(mid); if (!m || !canEditMember(m)) return;
-  const rows = kindRows(mid, t, kind); if (rows === undefined) return;
-  if (btn) btn.disabled = true;
-  try {
-    await q(sb.from("day_entries").delete().eq("member_id", mid).eq("day", iso(t)));
-    if (rows) await q(sb.from("day_entries").insert(rows.length ? rows.map(r => ({ member_id: mid, day: iso(t), mission_id: r.mission, pct: r.pct })) : [{ member_id: mid, day: iso(t), mission_id: null, pct: 0 }]));
-    await touchStatus(mid, "updated_at");
-    toast({ normal: "Journée remise comme prévu", abs: "Absence enregistrée", half: "Demi-journée enregistrée", free: "Journée libre enregistrée" }[kind]);
-    await after();
-  } catch (err) { toast(errMsg(err)); if (btn && btn.isConnected) btn.disabled = false; }
 }
 
 /* ================= vue Missions (admin) ================= */
@@ -1246,8 +1206,6 @@ document.addEventListener("click", async e => {
     if (t.dataset.armed !== "1") { t.dataset.armed = "1"; t.textContent = "Retirer ?"; t.classList.add("armed"); setTimeout(() => { if (t.isConnected) { t.dataset.armed = ""; t.textContent = "✕"; t.classList.remove("armed"); } }, 4000); return; }
     t.disabled = true; removeRow(mid, d.rowdel, +d.from); return;
   }
-  if (d.qd) { const mid = planTarget(); if (mid && t.getAttribute("aria-pressed") !== "true") quickDay(mid, +d.qd, d.qk, t); return; }
-  if (d.wnav !== undefined) { state.weekOffset = +d.wnav === 0 ? 0 : state.weekOffset + +d.wnav; render(); return; }
   if (d.plan) { state.planMember = d.plan; state.planOffset = 0; state.tab = "moi"; render(); window.scrollTo(0, 0); return; }
   if (d.a) { assignModal({ aId: d.a }); return; }
   if (d.mi) { missionModal(d.mi); return; }

@@ -259,28 +259,10 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--bg);b
 .top-right{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:flex-end;min-width:0}
 .theme-btn{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 12px}
 .theme-btn svg{width:16px;height:16px;flex:none}
-/* v2.1 : saisie en 1 clic */
-.week{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;list-style:none;margin:0;padding:0}
-.wcard{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--bg);min-width:0}
-.wcard.today{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
-.wcard.hol{background:repeating-linear-gradient(45deg,var(--soft) 0 5px,var(--bg) 5px 10px)}
-.wcard .wd{display:flex;justify-content:space-between;gap:6px;font-weight:600;font-size:.86rem}
-.wcard .wd .mono{font-weight:500}
-.wcard.over .wd .mono{color:var(--bad)} .wcard.low .wd .mono{color:var(--warn)} .wcard.ok .wd .mono{color:var(--good)}
-.wparts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:.8rem;flex:1}
-.wparts li{display:flex;gap:6px;align-items:center;min-width:0}
-.wparts li span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wparts li b{font-family:var(--f-mono);font-weight:500;font-size:.76rem}
-.qbtns{display:grid;grid-template-columns:1fr 1fr;gap:4px}
-.qbtn{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:7px 4px;font-size:.76rem;font-weight:500;color:var(--ink)}
-.qbtn:hover:not(:disabled){border-color:var(--muted)}
-.qbtn[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink);cursor:default}
-.qbtn.more{grid-column:1/-1;color:var(--muted)}
 .express{margin:0;padding:10px 12px;border-radius:8px;background:var(--soft);font-size:.9rem}
 details.adv summary{cursor:pointer;color:var(--accent);font-size:.86rem;font-weight:500;padding:2px 0}
 details.adv[open] summary{margin-bottom:12px}
 select.big{font-size:1rem;padding:10px!important}
-@media (max-width:900px){.week{grid-template-columns:1fr}.qbtns{grid-template-columns:repeat(5,minmax(0,1fr))}.qbtn.more{grid-column:auto}}
 code{font-family:var(--f-mono);font-size:.9em;background:var(--soft);padding:1px 5px;border-radius:4px}
 </style>
 <script>try{var t=localStorage.getItem("pdc.theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>
