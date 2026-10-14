@@ -658,21 +658,71 @@ function viewLogin(msg) {
   main().innerHTML = `<section class="panel login">
     <span class="eyebrow">Connexion</span>
     <h2>Accède au plan de charge</h2>
-    <p class="muted">Saisis ton adresse e-mail professionnelle : tu reçois un lien de connexion, sans mot de passe.</p>
+    <p class="muted">Connecte-toi avec ton e-mail professionnel et ton mot de passe. Première connexion ? Reçois un lien par e-mail, puis choisis ton mot de passe avec le bouton « Mot de passe » en haut de l'application.</p>
     <form id="loginForm" class="login-form">
-      <label class="f">E-mail<input type="email" id="loginEmail" required autocomplete="email" placeholder="prenom.nom@${esc(DOMAINS[0] || "datatilt.com")}"></label>
-      <button class="btn primary" type="submit" id="loginBtn">Recevoir mon lien de connexion</button>
+      <label class="f">E-mail<input type="email" id="loginEmail" required autocomplete="username" placeholder="prenom.nom@${esc(DOMAINS[0] || "datatilt.com")}"></label>
+      <label class="f">Mot de passe<input type="password" id="loginPw" autocomplete="current-password"></label>
+      <button class="btn primary" type="submit" id="loginBtn">Se connecter</button>
+      <div class="login-alt"><button class="btn" type="button" id="loginLink">Recevoir un lien de connexion</button><button class="linkbtn" type="button" id="loginForgot">Mot de passe oublié ?</button></div>
     </form>
     <p id="loginMsg" class="login-msg">${msg || ""}</p>
   </section>`;
 }
-async function sendLink(email) {
-  email = email.trim().toLowerCase();
+const loginMsg = (html, ok) => { $("loginMsg").innerHTML = `<span style="color:var(${ok ? "--good" : "--bad"})">${html}</span>`; };
+function loginEmailOk() {
+  const email = $("loginEmail").value.trim().toLowerCase();
+  if (!email || !$("loginEmail").checkValidity()) { loginMsg("Saisis ton adresse e-mail."); $("loginEmail").focus(); return null; }
   const dom = email.split("@")[1] || "";
-  if (DOMAINS.length && !DOMAINS.includes(dom)) { $("loginMsg").innerHTML = `<span style="color:var(--bad)">Seules les adresses ${esc(DOMAINS.map(d => "@" + d).join(", "))} peuvent se connecter.</span>`; return; }
+  if (DOMAINS.length && !DOMAINS.includes(dom)) { loginMsg(`Seules les adresses ${esc(DOMAINS.map(d => "@" + d).join(", "))} peuvent se connecter.`); return null; }
+  return email;
+}
+async function signInPw() {
+  const email = loginEmailOk(); if (!email) return;
+  const pw = $("loginPw").value;
+  if (!pw) { loginMsg("Saisis ton mot de passe, ou reçois un lien de connexion."); $("loginPw").focus(); return; }
   $("loginBtn").disabled = true;
-  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin + window.location.pathname } });
+  const { error } = await sb.auth.signInWithPassword({ email, password: pw });
+  if (!$("loginBtn")) return;
   $("loginBtn").disabled = false;
+  if (error) loginMsg(/invalid/i.test(error.message || "") ? "E-mail ou mot de passe incorrect. Pas encore de mot de passe ? Clique sur « Recevoir un lien de connexion »." : "Connexion impossible : " + esc(error.message));
+}
+async function forgotPw() {
+  const email = loginEmailOk(); if (!email) return;
+  $("loginForgot").disabled = true;
+  const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin + window.location.pathname });
+  $("loginForgot").disabled = false;
+  if (error) { loginMsg(/rate|seconds/i.test(error.message || "") ? "Trop de demandes rapprochées : patiente une minute." : "Envoi impossible : " + esc(error.message)); return; }
+  loginMsg(`Un lien pour choisir un nouveau mot de passe a été envoyé à <strong>${esc(email)}</strong>.`, true);
+}
+/* choisir ou changer son mot de passe (aussi ouvert après un lien « mot de passe oublié ») */
+function passwordModal(recovery) {
+  openModal(`<form class="modal" id="pwForm" aria-label="Mot de passe">
+    <h2>${recovery ? "Choisis un nouveau mot de passe" : "Mon mot de passe"}</h2>
+    <p class="muted small">Au moins 8 caractères. Tu pourras ensuite te connecter avec ${esc(state.me.email)} et ce mot de passe, sans attendre de lien.</p>
+    <input type="text" autocomplete="username" value="${esc(state.me.email)}" hidden>
+    <label class="f">Nouveau mot de passe<input type="password" id="pw1" required minlength="8" autocomplete="new-password"></label>
+    <label class="f">Confirmation<input type="password" id="pw2" required minlength="8" autocomplete="new-password"></label>
+    <p class="small" id="pwMsg"></p>
+    <div class="row-actions"><span></span><div class="r"><button type="button" class="btn" id="pwCancel">Annuler</button><button class="btn primary" type="submit" id="pwSave">Enregistrer</button></div></div>
+  </form>`);
+  $("pw1").focus();
+  $("pwCancel").onclick = closeModal;
+  $("pwForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const a = $("pw1").value, b = $("pw2").value; const msg = t => $("pwMsg").innerHTML = `<span style="color:var(--bad)">${esc(t)}</span>`;
+    if (a.length < 8) return msg("Le mot de passe doit faire au moins 8 caractères.");
+    if (a !== b) return msg("Les deux mots de passe ne sont pas identiques.");
+    $("pwSave").disabled = true;
+    const { error } = await sb.auth.updateUser({ password: a });
+    if (error) { $("pwSave").disabled = false; return msg(/same/i.test(error.message || "") ? "C'est déjà ton mot de passe actuel." : /reauth|recent/i.test(error.message || "") ? "Pour des raisons de sécurité, reconnecte-toi avec un lien puis recommence." : /weak|short|least/i.test(error.message || "") ? "Mot de passe trop simple : allonge-le ou ajoute des chiffres et symboles." : "Enregistrement impossible : " + error.message); }
+    closeModal(); toast("Mot de passe enregistré");
+  });
+}
+async function sendLink(email) {
+  email = loginEmailOk(); if (!email) return;
+  $("loginLink").disabled = true;
+  const { error } = await sb.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.origin + window.location.pathname } });
+  $("loginLink").disabled = false;
   if (error) {
     const rate = /rate|seconds/i.test(error.message || "");
     $("loginMsg").innerHTML = `<span style="color:var(--bad)">${rate ? "Trop de demandes rapprochées : patiente une minute avant de redemander un lien." : "Envoi impossible : " + esc(error.message)}</span>`;
@@ -691,7 +741,7 @@ function renderTabs() {
 }
 function renderChip() {
   const chip = $("meChip"); chip.hidden = false; const m = myMember();
-  chip.innerHTML = `<span class="avatar" aria-hidden="true"></span><span class="n"></span><span class="badge ${isAdmin() ? "admin" : ""}">${isAdmin() ? "Administrateur" : isManager() ? "Manager" : "Collaborateur"}</span><button class="btn small" id="btnLogout">Déconnexion</button>`;
+  chip.innerHTML = `<span class="avatar" aria-hidden="true"></span><span class="n"></span><span class="badge ${isAdmin() ? "admin" : ""}">${isAdmin() ? "Administrateur" : isManager() ? "Manager" : "Collaborateur"}</span><button class="btn small" id="btnPw">Mot de passe</button><button class="btn small" id="btnLogout">Déconnexion</button>`;
   chip.querySelector(".avatar").textContent = initials(m ? m.name : state.me.email);
   chip.querySelector(".n").textContent = m ? m.name : state.me.email;
 }
@@ -1191,6 +1241,9 @@ document.addEventListener("click", async e => {
   if (t.closest("#modalRoot")) return;
   const d = t.dataset;
   if (t.id === "btnLogout") { await sb.auth.signOut(); return; }
+  if (t.id === "btnPw") { passwordModal(false); return; }
+  if (t.id === "loginLink") { sendLink(); return; }
+  if (t.id === "loginForgot") { forgotPw(); return; }
   if (d.tab) { state.tab = d.tab; if (d.tab === "moi") { state.planMember = null; state.planOffset = 0; } render(); return; }
   if (d.h) { state.h = +d.h; try { localStorage.setItem("pdc.h2", state.h); } catch (_) {} render(); return; }
   if (d.mf) { state.mFilter = d.mf; render(); return; }
@@ -1262,7 +1315,7 @@ document.addEventListener("submit", e => {
     const dom = v.split("@")[1] || "";
     guard(null, () => q(sb.from("admins").insert({ email: v })), DOMAINS.length && !DOMAINS.includes(dom) ? "Administrateur ajouté (attention : ce domaine ne peut pas se connecter)" : "Administrateur ajouté");
   }
-  if (e.target.id === "loginForm") { e.preventDefault(); sendLink($("loginEmail").value); }
+  if (e.target.id === "loginForm") { e.preventDefault(); signInPw(); }
 });
 document.addEventListener("keydown", e => { if (e.key === "Escape") { if (gsel) gselClear(); closeModal(); } });
 document.addEventListener("change", e => {
@@ -1303,9 +1356,10 @@ async function onSession(session) {
   state.me = { id: u.id, email: u.email || "", isAdmin: false };
   if (window.location.hash.includes("access_token")) history.replaceState(null, "", window.location.pathname);
   main().innerHTML = `<div class="state">Chargement du plan de charge…</div>`;
-  try { await refreshAdmin(); await loadAll(); subscribe(); render(); }
+  try { await refreshAdmin(); await loadAll(); subscribe(); render(); if (pwRecovery) { pwRecovery = false; passwordModal(true); } }
   catch (e) { main().innerHTML = `<div class="panel state"><h2>Chargement impossible</h2><p>${esc(e.message || "Erreur de connexion à la base.")}</p><p class="muted small">As-tu exécuté <code>supabase/migration_v2.sql</code> ?</p><button class="btn" id="btnLogout">Se déconnecter</button></div>`; }
 }
-sb.auth.onAuthStateChange((_ev, session) => { setTimeout(() => onSession(session), 0); });
+let pwRecovery = false;
+sb.auth.onAuthStateChange((ev, session) => { if (ev === "PASSWORD_RECOVERY") { if (currentUser && state.loaded) setTimeout(() => passwordModal(true), 0); else pwRecovery = true; } setTimeout(() => onSession(session), 0); });
 sb.auth.getSession().then(({ data }) => onSession(data.session));
 })();

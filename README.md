@@ -2,7 +2,7 @@
 
 Plan de charge et disponibilité des consultants DATATILT.
 
-Les administrateurs créent les **missions** (BUILD, RUN, avant-vente, interne, absences). Chaque collaborateur se connecte avec son e-mail professionnel (lien magique, sans mot de passe), **s'affecte à ses missions** (pourcentage, jours de la semaine, jusqu'à la fin de la mission) et son planning se remplit tout seul. Il ajuste ensuite au jour près sur une grille de 3 semaines (absence, demi-journée, autre mission).
+Les administrateurs créent les **missions** (BUILD, RUN, avant-vente, interne, absences). Chaque collaborateur se connecte avec son e-mail professionnel (premier accès par lien magique, puis mot de passe au choix), **s'affecte à ses missions** (pourcentage, jours de la semaine, jusqu'à la fin de la mission) et son planning se remplit tout seul. Il ajuste ensuite au jour près sur une grille de 3 semaines (absence, demi-journée, autre mission).
 
 Les administrateurs pilotent les KPI : taux facturable, occupation, intercontrat, surcharges et fraîcheur des plannings.
 
@@ -95,6 +95,7 @@ Dans Supabase, va dans **Authentication → URL Configuration** :
 
 - **Envoi des e-mails** : le service d'e-mail intégré de Supabase est limité à quelques envois par heure. Pour une équipe de 20 personnes, configure un SMTP professionnel dans **Authentication → Emails → SMTP Settings** (Microsoft 365, Brevo, Resend…).
 - **Modèle d'e-mail** : dans **Authentication → Emails → Magic Link**, traduis l'objet et le texte en français.
+- **Mots de passe** : la connexion par mot de passe utilise le fournisseur **Email** de Supabase (**Authentication → Sign In / Providers → Email**, activé par défaut). Chaque collaborateur se connecte une première fois par lien, puis choisit son mot de passe avec le bouton « Mot de passe ». « Mot de passe oublié ? » envoie l'e-mail **Reset Password** (à traduire dans **Authentication → Emails**).
 - **Autoriser un autre domaine** (filiale…) : exécute `insert into public.allowed_domains (domain) values ('autre-domaine.com');` puis ajoute-le dans `config.js`.
 - **Sauvegardes** : le plan gratuit de Supabase ne garde pas d'historique long. Exporte régulièrement les tables (Table Editor → Export CSV) ou passe au plan Pro.
 
