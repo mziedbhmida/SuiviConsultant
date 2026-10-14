@@ -882,16 +882,37 @@ function assignModal({ memberId, aId, missionId, absence, pickMember }) {
 }
 
 /* --- mission (admin) --- */
-/* --- suppression de missions en masse : les missions utilisées (affectations, jours saisis) sont protégées par la base --- */
-async function deleteMissions(ids) {
-  const used = new Set([...state.assign.map(a => a.mission_id), ...state.entries.map(e => e.mission_id)]);
-  const free = ids.filter(id => !used.has(id)); let busy = ids.length - free.length, done = 0;
-  if (free.length) {
-    try { await q(sb.from("missions").delete().in("id", free)); done = free.length; }
-    catch (_) { for (const id of free) { try { await q(sb.from("missions").delete().eq("id", id)); done++; } catch (_) { busy++; } } }
-  }
-  state.mSel.clear();
-  toast(`${done} mission${done > 1 ? "s supprimées" : " supprimée"}${busy ? ` · ${busy} non supprimée${busy > 1 ? "s" : ""} car utilisée${busy > 1 ? "s" : ""} dans des plannings : archive-les plutôt` : ""}`);
+/* --- suppression de missions (une ou plusieurs). Une mission utilisée dans des plannings
+   n'est supprimée qu'après confirmation, avec ses affectations et ses jours saisis. --- */
+function deleteMissions(ids) {
+  const usage = ids.map(id => {
+    const as = state.assign.filter(a => a.mission_id === id); const en = state.entries.filter(e => e.mission_id === id);
+    return { id, m: missionById(id), as: as.length, days: new Set(en.map(e => e.member_id + e.day)).size, who: [...new Set([...as, ...en].map(x => x.member_id))] };
+  });
+  const used = usage.filter(u => u.as || u.days);
+  if (!used.length) return runDelete(ids, false);
+  const freeN = ids.length - used.length;
+  openModal(`<div class="modal" role="dialog" aria-label="Supprimer des missions utilisées">
+    <h2>${used.length === 1 ? "Cette mission est utilisée" : `${used.length} missions sont utilisées`}</h2>
+    <p class="muted small">Les supprimer efface aussi leurs affectations et les jours saisis dans les plannings des consultants concernés. Cette action est définitive. Pour garder l'historique, archive-les plutôt.</p>
+    <div class="scroll" style="max-height:260px;overflow:auto"><table class="list"><thead><tr><th>Mission</th><th>Consultants</th><th>Affectations</th><th>Jours saisis</th></tr></thead><tbody>${used.map(u => `<tr><td><strong>${esc(missionLabel(u.m))}</strong></td><td class="small">${esc(u.who.map(cName).join(", "))}</td><td class="mono">${u.as}</td><td class="mono">${u.days}</td></tr>`).join("")}</tbody></table></div>
+    <div class="row-actions"><button type="button" class="btn" id="xArch">Archiver plutôt</button><div class="r"><button type="button" class="btn" id="xCancel">Annuler</button>${freeN ? `<button type="button" class="btn" id="xFree">Supprimer seulement les ${freeN} non utilisée${freeN > 1 ? "s" : ""}</button>` : ""}<button type="button" class="btn danger" id="xAll">Tout supprimer</button></div></div>
+  </div>`);
+  $("xCancel").onclick = closeModal;
+  $("xArch").onclick = async () => { try { await q(sb.from("missions").update({ active: false }).in("id", used.map(u => u.id))); closeModal(); if (state.mSel) state.mSel.clear(); toast(`${used.length} mission${used.length > 1 ? "s archivées" : " archivée"}`); await after(); } catch (err) { toast(errMsg(err)); } };
+  if ($("xFree")) $("xFree").onclick = () => { closeModal(); runDelete(ids.filter(id => !used.some(u => u.id === id)), false); };
+  $("xAll").onclick = () => { $("xAll").disabled = true; closeModal(); runDelete(ids, true); };
+}
+async function runDelete(ids, force) {
+  try {
+    if (force) {
+      await q(sb.from("day_entries").delete().in("mission_id", ids));
+      await q(sb.from("assignments").delete().in("mission_id", ids));
+    }
+    await q(sb.from("missions").delete().in("id", ids));
+    toast(`${ids.length} mission${ids.length > 1 ? "s supprimées" : " supprimée"}`);
+  } catch (err) { toast(errMsg(err)); }
+  if (state.mSel) state.mSel.clear();
   await after();
 }
 /* --- import de missions en masse (copier-coller depuis Excel ou une ligne par mission) --- */
@@ -997,7 +1018,7 @@ function missionModal(id) {
   const del = $("mDel");
   if (del) del.onclick = async () => {
     if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = "Confirmer la suppression"; return; }
-    try { await q(sb.from("missions").delete().eq("id", id)); closeModal(); toast("Mission supprimée"); await after(); } catch (err) { toast(errMsg(err)); }
+    closeModal(); deleteMissions([id]);
   };
   $("mForm").addEventListener("submit", async e => {
     e.preventDefault();
