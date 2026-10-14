@@ -405,7 +405,8 @@ function viewPlanning() {
       const wk = wdIdx(d) === 1 ? "wk" : "";
       if (!totals[i]) return `<td class="v hol ${wk}">Férié</td>`;
       const v = row.vals.get(d); const ex = totals[i].explicit ? "ex" : "";
-      return `<td class="v ${v ? "on" : ""} ${ex} ${wk}" style="--c:${TYPES[row.m.type].color}">${cellBtn(d, v ? Math.round(v) : "")}</td>`;
+      const inner = v ? Math.round(v) : "";
+      return `<td class="v ${v ? "on" : ""} ${ex} ${wk}" style="--c:${TYPES[row.m.type].color}">${ro ? inner : `<button data-cell="${d}" data-mis="${esc(row.m.id)}" aria-label="${esc(row.m.name)} le ${esc(frLong(d))} : modifier le %">${inner}</button>`}</td>`;
     }).join("")}</tr>`).join("");
   const totalRow = `<tr class="total"><th class="lbl" scope="row">Charge du jour</th>${days.map((d, i) => {
       const wk = wdIdx(d) === 1 ? "wk" : ""; const r = totals[i];
@@ -428,7 +429,7 @@ function viewPlanning() {
   <section class="panel"><div class="panel-head"><h2>Vue sur 3 semaines</h2>
     <div class="navw"><span class="eyebrow">${d1(free)} j libres</span><button class="btn small" data-nav="-1" aria-label="Semaine précédente">←</button><button class="btn small" data-nav="0">Aujourd'hui</button><button class="btn small" data-nav="1" aria-label="Semaine suivante">→</button></div></div>
     <div class="scroll"><table class="dgrid"><thead>${head}</thead><tbody>${body}${emptyRow}${totalRow}</tbody></table></div>
-    <p class="muted small">${ro ? "" : "Clique sur un jour pour l'ajuster (absence, demi-journée, autre mission). "}Les valeurs sont en % de la journée. Un point signale un jour ajusté manuellement.</p></section>
+    <p class="muted small">${ro ? "" : "Clique sur une case pour saisir le % directement (Entrée ou Tab pour valider, Échap pour annuler, 0 pour retirer). Clique sur la charge du jour pour poser une absence ou ajouter une autre mission. "}Les valeurs sont en % de la journée. Un point signale un jour ajusté manuellement.</p></section>
   <section class="panel"><div class="panel-head"><h2>Missions récurrentes</h2><span class="eyebrow">remplissent automatiquement le planning</span></div>
     <div class="scroll"><table class="list"><thead><tr><th>Mission</th><th>Type</th><th>Statut</th><th>Temps</th><th>Jours</th><th>Période</th><th>Fin dans</th><th></th></tr></thead><tbody>${assignRows(work, false) || `<tr><td colspan="8" class="empty-note">Aucune mission récurrente${ro ? "." : " : « + Affecter à une mission » pour en ajouter une."}</td></tr>`}</tbody></table></div></section>
   ${absn.length ? `<section class="panel"><div class="panel-head"><h2>Absences à venir</h2></div><div class="scroll"><table class="list"><thead><tr><th>Motif</th><th>Type</th><th></th><th>Temps</th><th>Jours</th><th>Période</th><th>Fin dans</th><th></th></tr></thead><tbody>${assignRows(absn, false)}</tbody></table></div></section>` : ""}`;
@@ -462,6 +463,58 @@ function weekCards(m) {
   return `<section class="panel"><div class="panel-head"><div><h2>${label}</h2><span class="muted small">S${isoWeek(mon)} · du ${frDate(mon)} au ${frDate(mon + 4 * DAY)} · un clic suffit</span></div>
     <div class="navw"><button class="btn small" data-wnav="-1" aria-label="Semaine précédente">←</button><button class="btn small" data-wnav="0">Cette semaine</button><button class="btn small" data-wnav="1" aria-label="Semaine suivante">→</button></div></div>
     <ul class="week">${cards}</ul></section>`;
+}
+/* ================= saisie directe dans la grille ================= */
+let cellEditing = false, cellQueue = Promise.resolve();
+function dayRows(mid, t) {
+  const rows = []; for (const p of partsFor(mid, t).parts) { const r = rows.find(x => x.mission === p.m.id); if (r) r.pct += p.pct; else rows.push({ mission: p.m.id, pct: p.pct }); }
+  rows.forEach(r => r.pct = Math.min(100, Math.round(r.pct)));
+  return rows;
+}
+function cellSiblings(btn) { return [...btn.closest("tr").querySelectorAll("button[data-cell]")]; }
+function openCell(btn) {
+  const mid = planTarget(); const m = mid && memberById(mid); if (!m || !canEditMember(m)) return;
+  const t = +btn.dataset.cell, mis = btn.dataset.mis;
+  const cur = (dayRows(mid, t).find(r => r.mission === mis) || {}).pct || 0;
+  const td = btn.parentElement;
+  td.innerHTML = `<input type="number" class="cin" min="0" max="100" step="1" inputmode="numeric" value="${cur || ""}" aria-label="${esc(btn.getAttribute("aria-label"))}">`;
+  const inp = td.firstElementChild; cellEditing = true; inp.focus(); inp.select();
+  let done = false;
+  const finish = (save, move) => {
+    if (done) return; done = true; cellEditing = false;
+    const raw = inp.value.trim(); const v = raw === "" ? 0 : Math.max(0, Math.min(100, Math.round(+raw)));
+    const next = move ? { t: t + 0, mis, move } : null;
+    if (!save || isNaN(v) || v === cur) {
+      td.innerHTML = ""; td.append(btn); btn.textContent = cur || "";
+      if (next) { const sib = cellSiblings(btn); const n = sib[sib.indexOf(btn) + move]; if (n) openCell(n); } else btn.focus();
+      return;
+    }
+    td.innerHTML = `<span class="cin-wait">${v || ""}</span>`;
+    cellQueue = cellQueue.then(() => saveCell(mid, t, mis, v, next));
+  };
+  inp.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true, 0); }
+    else if (e.key === "Tab") { e.preventDefault(); finish(true, e.shiftKey ? -1 : 1); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false, 0); }
+  });
+  inp.addEventListener("blur", () => finish(true, 0));
+}
+async function saveCell(mid, t, mis, v, next) {
+  const rows = dayRows(mid, t).filter(r => r.mission !== mis && r.pct > 0);
+  if (v > 0) rows.push({ mission: mis, pct: v });
+  try {
+    await q(sb.from("day_entries").delete().eq("member_id", mid).eq("day", iso(t)));
+    await q(sb.from("day_entries").insert(rows.length ? rows.map(r => ({ member_id: mid, day: iso(t), mission_id: r.mission, pct: r.pct })) : [{ member_id: mid, day: iso(t), mission_id: null, pct: 0 }]));
+    await touchStatus(mid, "updated_at");
+  } catch (err) { toast(errMsg(err)); }
+  try { await loadAll(); } catch (err) { toast(errMsg(err)); }
+  if (cellEditing) { schedule(); return; }
+  render();
+  if (next) {
+    const btn = document.querySelector(`button[data-cell="${t}"][data-mis="${CSS.escape(mis)}"]`);
+    const n = btn && cellSiblings(btn)[cellSiblings(btn).indexOf(btn) + next.move];
+    if (n) openCell(n);
+  }
 }
 async function quickDay(mid, t, kind, btn) {
   const m = memberById(mid); if (!m || !canEditMember(m)) return;
@@ -586,7 +639,7 @@ function render() {
   renderFinderResults();
   if (fs) { const el = $(fs); if (el && el.focus) { el.focus(); if (el.type === "search" || el.type === "text") { const v = el.value; try { el.setSelectionRange(v.length, v.length); } catch (_) {} } } }
 }
-let rT = null; const schedule = () => { clearTimeout(rT); rT = setTimeout(render, 30); };
+let rT = null; const schedule = () => { clearTimeout(rT); rT = setTimeout(() => cellEditing ? schedule() : render(), 30); };
 
 /* ================= données ================= */
 async function q(p) { const { data, error } = await p; if (error) throw error; return data; }
@@ -890,6 +943,7 @@ document.addEventListener("click", async e => {
   if (d.mf) { state.mFilter = d.mf; render(); return; }
   if (d.nav !== undefined) { state.planOffset = +d.nav === 0 ? 0 : state.planOffset + +d.nav; render(); return; }
   if (d.day) { const mid = planTarget(); if (mid) dayModal(mid, +d.day); return; }
+  if (d.cell) { openCell(t); return; }
   if (d.qd) { const mid = planTarget(); if (mid && t.getAttribute("aria-pressed") !== "true") quickDay(mid, +d.qd, d.qk, t); return; }
   if (d.wnav !== undefined) { state.weekOffset = +d.wnav === 0 ? 0 : state.weekOffset + +d.wnav; render(); return; }
   if (d.plan) { state.planMember = d.plan; state.planOffset = 0; state.tab = "moi"; render(); window.scrollTo(0, 0); return; }
