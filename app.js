@@ -433,7 +433,7 @@ function viewPlanning() {
   ${ro ? "" : weekCards(m)}
   <section class="panel"><div class="panel-head"><h2>Vue sur 3 semaines</h2>
     <div class="navw"><span class="eyebrow">${d1(free)} j libres</span><button class="btn small" data-nav="-1" aria-label="Semaine précédente">←</button><button class="btn small" data-nav="0">Aujourd'hui</button><button class="btn small" data-nav="1" aria-label="Semaine suivante">→</button></div></div>
-    ${ro ? "" : `<form class="gselbar" id="gselBar" hidden><span id="gselInfo"></span><label>Mettre<input type="number" id="gselVal" min="0" max="100" step="1" inputmode="numeric" placeholder="%" aria-label="Pourcentage à appliquer"> %</label><button class="btn small primary" type="submit">Appliquer</button><button class="btn small" type="button" id="gselZero">Vider</button><button class="btn small" type="button" id="gselCancel">Annuler</button></form>`}
+    ${ro ? "" : `<form class="gselbar" id="gselBar" hidden><span id="gselInfo"></span><label>Mettre<input type="number" id="gselVal" min="0" max="100" step="1" inputmode="numeric" placeholder="%" aria-label="Pourcentage à appliquer"> %</label><button class="btn small primary" type="submit">Appliquer</button><button class="btn small" type="button" id="gselZero">Vider</button><span class="sep" aria-hidden="true"></span><button class="btn small" type="button" data-gk="abs">Absent</button><button class="btn small" type="button" data-gk="half">½ journée d'absence</button><button class="btn small" type="button" data-gk="normal">Comme prévu</button><button class="btn small" type="button" id="gselCancel">Annuler</button></form>`}
     <div class="scroll"><table class="dgrid"><thead>${head}</thead><tbody>${body}${emptyRow}${addRow}${totalRow}</tbody></table></div>
     <p class="muted small">${ro ? "" : "Clique sur une case pour saisir le % (Entrée ou Tab pour valider, Échap pour annuler, 0 pour retirer). Pour remplir en bloc : glisse sur plusieurs cases, Maj+clic, ou clique sur le nom d'une mission pour prendre ses 3 semaines. Clique sur la charge du jour pour poser une absence ou ajouter une autre mission. "}Les valeurs sont en % de la journée. Un point signale un jour ajusté manuellement.</p></section>
   <section class="panel"><div class="panel-head"><h2>Missions récurrentes</h2><span class="eyebrow">remplissent automatiquement le planning</span></div>
@@ -513,6 +513,22 @@ async function gselApply(v) {
     for (let i = 0; i < ins.length; i += 500) await q(sb.from("day_entries").insert(ins.slice(i, i + 500)));
     await touchStatus(mid, "updated_at");
     toast(`${days.length} jour${days.length > 1 ? "s" : ""} mis à jour`);
+  } catch (err) { toast(errMsg(err)); }
+  gsel = null; cellEditing = false; await after();
+}
+/* absence, demi-journée ou retour aux missions récurrentes sur tous les jours sélectionnés */
+async function gselKind(kind) {
+  const cells = gselCells(); const mid = planTarget(); const m = mid && memberById(mid);
+  if (!cells.length || !m || !canEditMember(m)) return;
+  if (kind !== "normal" && !absenceMission()) { toast("Aucun motif d'absence dans le catalogue."); return; }
+  const days = [...new Set(cells.map(b => +b.dataset.cell))]; const ins = [];
+  for (const t of days) { const rows = kindRows(mid, t, kind); if (rows == null) continue; if (rows.length) rows.forEach(r => ins.push({ member_id: mid, day: iso(t), mission_id: r.mission, pct: r.pct })); else ins.push({ member_id: mid, day: iso(t), mission_id: null, pct: 0 }); }
+  $("gselBar").querySelectorAll("button,input").forEach(x => x.disabled = true);
+  try {
+    await q(sb.from("day_entries").delete().eq("member_id", mid).in("day", days.map(iso)));
+    for (let i = 0; i < ins.length; i += 500) await q(sb.from("day_entries").insert(ins.slice(i, i + 500)));
+    await touchStatus(mid, "updated_at");
+    toast(`${{ abs: "Absence", half: "Demi-journée d'absence", normal: "Retour aux missions récurrentes" }[kind]} : ${days.length} jour${days.length > 1 ? "s" : ""}`);
   } catch (err) { toast(errMsg(err)); }
   gsel = null; cellEditing = false; await after();
 }
@@ -603,17 +619,24 @@ async function saveCell(mid, t, mis, v, next) {
     if (n) openCell(n);
   }
 }
+/* lignes d'une journée pour un choix rapide (null = revenir aux missions récurrentes, [] = libre).
+   La demi-journée garde les missions du jour, saisies à la main ou récurrentes, ramenées à leur moitié. */
+function kindRows(mid, t, kind) {
+  if (kind === "normal") return null;
+  if (kind === "free") return [];
+  const a = absenceMission(); if (!a) return undefined;
+  if (kind === "abs") return [{ mission: a.id, pct: 100 }];
+  const cur = partsFor(mid, t).parts;
+  const abs = Math.min(100, cur.filter(p => p.m.type === "ABSENCE").reduce((s, p) => s + p.pct, 0));
+  let work = abs < 100 ? cur.filter(p => p.m.type !== "ABSENCE" && p.pct > 0).map(p => ({ id: p.m.id, pct: p.pct * 100 / (100 - abs) })) : [];
+  if (!work.length) work = partsFor(mid, t, true).parts.filter(p => p.m.type !== "ABSENCE" && p.pct > 0).map(p => ({ id: p.m.id, pct: p.pct }));
+  const rows = [{ mission: a.id, pct: 50 }];
+  for (const p of work) { const v = Math.max(5, Math.round(Math.min(100, p.pct) / 2 / 5) * 5); const x = rows.find(r => r.mission === p.id); if (x) x.pct = Math.min(100, x.pct + v); else rows.push({ mission: p.id, pct: v }); }
+  return rows;
+}
 async function quickDay(mid, t, kind, btn) {
   const m = memberById(mid); if (!m || !canEditMember(m)) return;
-  let rows = null;
-  if (kind === "abs") { const a = absenceMission(); if (!a) return; rows = [{ mission: a.id, pct: 100 }]; }
-  else if (kind === "free") rows = [];
-  else if (kind === "half") {
-    const a = absenceMission(); if (!a) return;
-    const work = partsFor(mid, t, true).parts.filter(p => p.m.type !== "ABSENCE");
-    rows = [{ mission: a.id, pct: 50 }];
-    for (const p of work) { const v = Math.max(5, Math.round(p.pct / 2 / 5) * 5); const x = rows.find(r => r.mission === p.m.id); if (x) x.pct = Math.min(100, x.pct + v); else rows.push({ mission: p.m.id, pct: v }); }
-  }
+  const rows = kindRows(mid, t, kind); if (rows === undefined) return;
   if (btn) btn.disabled = true;
   try {
     await q(sb.from("day_entries").delete().eq("member_id", mid).eq("day", iso(t)));
@@ -1216,6 +1239,7 @@ document.addEventListener("click", async e => {
   if (d.cell) { if (gselNoClick) { gselNoClick = false; return; } if (gsel && gselCells().length > 1) return; gsel = null; gselPaint(); openCell(t); return; }
   if (d.rowsel) { gselRow(t.closest("tr").querySelector("button[data-cell]")); return; }
   if (t.id === "gselZero") { gselApply(0); return; }
+  if (d.gk) { gselKind(d.gk); return; }
   if (t.id === "gselCancel") { gselClear(); return; }
   if (d.rowdel) {
     const mid = planTarget(); if (!mid) return;
