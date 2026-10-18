@@ -2,7 +2,7 @@
 
 Plan de charge et disponibilité des consultants DATATILT.
 
-Les administrateurs créent les **missions** (BUILD, RUN, avant-vente, interne, absences). Chaque collaborateur se connecte avec son e-mail professionnel (premier accès par lien magique, puis mot de passe au choix), **s'affecte à ses missions** (pourcentage, jours de la semaine, jusqu'à la fin de la mission) et son planning se remplit tout seul. Il ajuste ensuite au jour près sur une grille de 3 semaines (absence, demi-journée, autre mission).
+Les administrateurs créent les **missions** (BUILD, RUN, avant-vente, interne, absences). Chaque collaborateur se connecte avec son e-mail professionnel (mot de passe provisoire donné par un administrateur, ou lien magique, puis mot de passe personnel), **s'affecte à ses missions** (pourcentage, jours de la semaine, jusqu'à la fin de la mission) et son planning se remplit tout seul. Il ajuste ensuite au jour près sur une grille de 3 semaines (absence, demi-journée, autre mission).
 
 Les administrateurs pilotent les KPI : taux facturable, occupation, intercontrat, surcharges et fraîcheur des plannings.
 
@@ -39,6 +39,7 @@ Crée d'abord le dépôt **vide** sur github.com (bouton *New repository*, nom `
    Colle ensuite le fichier et clique sur **Run**.
 4. Exécute ensuite `supabase/migration_v2.sql` (missions, affectations, saisie au jour, gestion des admins).
    Puis `supabase/migration_v3.sql` (e-mail des consultants pour les rappels).
+   Puis `supabase/migration_v4.sql` (création des comptes par un administrateur, sans e-mail).
 5. *(Optionnel)* Pour avoir des données d'exemple, exécute `supabase/seed.sql`. Elles se suppriment ensuite en un clic dans l'application.
 6. Va dans **Project Settings → API** et copie :
    - **Project URL** ;
@@ -79,7 +80,9 @@ Dans Supabase, va dans **Authentication → URL Configuration** :
    - crée les profils des consultants ;
    - supprime les exemples.
 4. Dans **Mon planning**, choisis ton propre profil. Pour un administrateur, le rattachement est immédiat.
-5. Envoie l'adresse de l'application à l'équipe. Chacun se connecte, choisit son nom (tu valides la demande dans **Administration**), puis s'affecte à ses missions avec « + Affecter à une mission ».
+5. Crée les comptes : dans **Administration → Équipe**, renseigne l'e-mail et un **mot de passe provisoire** à la création du consultant, ou clique sur « Créer le compte » pour un profil existant. Aucun e-mail n'est envoyé : transmets toi-même l'adresse de l'application et le mot de passe. À sa première connexion, chacun doit choisir son propre mot de passe, puis s'affecte à ses missions avec « + Affecter à une mission ». Le bouton « Mot de passe » d'une ligne de l'équipe redonne un mot de passe provisoire à quelqu'un qui l'a oublié.
+
+   *Autre possibilité* : la personne se connecte par lien, choisit son nom et tu valides la demande dans **Administration**.
 
 ---
 

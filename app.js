@@ -683,9 +683,10 @@ function viewAdmin() {
     </section>
   </div>
   <section class="panel"><h2>Inviter un collaborateur</h2>
-    <ol class="steps"><li>Crée son profil ci-dessous (nom, groupe, compétences).</li><li>Envoie-lui l'adresse de l'application.</li><li>Il se connecte avec son e-mail ${esc(DOMAINS.map(d => "@" + d).join(" ou "))} et choisit son nom dans « Mon planning ».</li><li>Tu valides la demande en haut de cette page. Il s'affecte ensuite à ses missions en quelques clics.</li></ol></section>
+    <ol class="steps"><li>Crée son profil ci-dessous avec son e-mail ${esc(DOMAINS.map(d => "@" + d).join(" ou "))} et un mot de passe provisoire (ou « Créer le compte » sur un profil existant). Aucun e-mail n'est envoyé.</li><li>Transmets-lui l'adresse de l'application et ce mot de passe.</li><li>À sa première connexion, il choisit son propre mot de passe, puis s'affecte à ses missions en quelques clics.</li></ol>
+    <p class="muted small">Autre possibilité : il se connecte par lien, choisit son nom dans « Mon planning » et tu valides la demande en haut de cette page.</p></section>
   <section class="panel"><div class="panel-head"><h2>Équipe</h2><button class="btn primary" id="btnAddC">+ Consultant</button></div>
-    <div class="scroll"><table class="list"><thead><tr><th>Consultant</th><th>Groupe</th><th>Rôle</th><th>Compte</th><th>Planning</th><th></th></tr></thead><tbody>${state.members.map(m => { const f = freshness(m); return `<tr><td><strong>${esc(m.name)}</strong></td><td>${esc(groupName(m.group_id))}</td><td>${esc(m.role || "")}</td><td>${m.user_id ? esc(m.user_email || "Compte rattaché") : `<span class="pill">Non rattaché</span>`}</td><td><span class="person"><i class="fresh ${f.cls}"></i>${esc(f.label)}</span></td><td style="white-space:nowrap"><button class="btn small" data-c="${esc(m.id)}">Modifier</button> <button class="btn small" data-plan="${esc(m.id)}">Planning</button>${m.user_id ? ` <button class="btn small" data-unlink="${esc(m.id)}">Détacher</button>` : ""}</td></tr>`; }).join("") || `<tr><td colspan="6" class="empty-note">Aucun consultant.</td></tr>`}</tbody></table></div></section>`;
+    <div class="scroll"><table class="list"><thead><tr><th>Consultant</th><th>Groupe</th><th>Rôle</th><th>Compte</th><th>Planning</th><th></th></tr></thead><tbody>${state.members.map(m => { const f = freshness(m); return `<tr><td><strong>${esc(m.name)}</strong></td><td>${esc(groupName(m.group_id))}</td><td>${esc(m.role || "")}</td><td>${m.user_id ? esc(m.user_email || "Compte rattaché") : `<span class="pill">Non rattaché</span>`}</td><td><span class="person"><i class="fresh ${f.cls}"></i>${esc(f.label)}</span></td><td style="white-space:nowrap"><button class="btn small" data-c="${esc(m.id)}">Modifier</button> <button class="btn small" data-plan="${esc(m.id)}">Planning</button>${m.user_id ? ` <button class="btn small" data-pwreset="${esc(m.id)}">Mot de passe</button> <button class="btn small" data-unlink="${esc(m.id)}">Détacher</button>` : ` <button class="btn small primary" data-acct="${esc(m.id)}">Créer le compte</button>`}</td></tr>`; }).join("") || `<tr><td colspan="6" class="empty-note">Aucun consultant.</td></tr>`}</tbody></table></div></section>`;
 }
 
 /* ================= connexion ================= */
@@ -694,7 +695,7 @@ function viewLogin(msg) {
   main().innerHTML = `<section class="panel login">
     <span class="eyebrow">Connexion</span>
     <h2>Accède au plan de charge</h2>
-    <p class="muted">Connecte-toi avec ton e-mail professionnel et ton mot de passe. Première connexion ? Reçois un lien par e-mail, puis choisis ton mot de passe avec le bouton « Mot de passe » en haut de l'application.</p>
+    <p class="muted">Connecte-toi avec ton e-mail professionnel et ton mot de passe. Ton administrateur t'a donné un mot de passe provisoire ? Utilise-le : tu choisiras le tien juste après. Sinon, reçois un lien par e-mail.</p>
     <form id="loginForm" class="login-form">
       <label class="f">E-mail<input type="email" id="loginEmail" required autocomplete="username" placeholder="prenom.nom@${esc(DOMAINS[0] || "datatilt.com")}"></label>
       <label class="f">Mot de passe<input type="password" id="loginPw" autocomplete="current-password"></label>
@@ -731,27 +732,29 @@ async function forgotPw() {
   loginMsg(`Un lien pour choisir un nouveau mot de passe a été envoyé à <strong>${esc(email)}</strong>.`, true);
 }
 /* choisir ou changer son mot de passe (aussi ouvert après un lien « mot de passe oublié ») */
-function passwordModal(recovery) {
+function passwordModal(recovery, forced) {
   openModal(`<form class="modal" id="pwForm" aria-label="Mot de passe">
-    <h2>${recovery ? "Choisis un nouveau mot de passe" : "Mon mot de passe"}</h2>
+    <h2>${forced ? "Choisis ton mot de passe" : recovery ? "Choisis un nouveau mot de passe" : "Mon mot de passe"}</h2>
+    ${forced ? `<p class="small">Tu t'es connecté avec un mot de passe provisoire. Remplace-le par le tien pour continuer.</p>` : ""}
     <p class="muted small">Au moins 8 caractères. Tu pourras ensuite te connecter avec ${esc(state.me.email)} et ce mot de passe, sans attendre de lien.</p>
     <input type="text" autocomplete="username" value="${esc(state.me.email)}" hidden>
     <label class="f">Nouveau mot de passe<input type="password" id="pw1" required minlength="8" autocomplete="new-password"></label>
     <label class="f">Confirmation<input type="password" id="pw2" required minlength="8" autocomplete="new-password"></label>
     <p class="small" id="pwMsg"></p>
-    <div class="row-actions"><span></span><div class="r"><button type="button" class="btn" id="pwCancel">Annuler</button><button class="btn primary" type="submit" id="pwSave">Enregistrer</button></div></div>
+    <div class="row-actions"><span></span><div class="r"><button type="button" class="btn" id="pwCancel">${forced ? "Se déconnecter" : "Annuler"}</button><button class="btn primary" type="submit" id="pwSave">Enregistrer</button></div></div>
   </form>`);
+  modalLocked = !!forced;
   $("pw1").focus();
-  $("pwCancel").onclick = closeModal;
+  $("pwCancel").onclick = forced ? () => { modalLocked = false; closeModal(); sb.auth.signOut(); } : closeModal;
   $("pwForm").addEventListener("submit", async e => {
     e.preventDefault();
     const a = $("pw1").value, b = $("pw2").value; const msg = t => $("pwMsg").innerHTML = `<span style="color:var(--bad)">${esc(t)}</span>`;
     if (a.length < 8) return msg("Le mot de passe doit faire au moins 8 caractères.");
     if (a !== b) return msg("Les deux mots de passe ne sont pas identiques.");
     $("pwSave").disabled = true;
-    const { error } = await sb.auth.updateUser({ password: a });
+    const { error } = await sb.auth.updateUser({ password: a, data: { must_change_password: false } });
     if (error) { $("pwSave").disabled = false; return msg(/same/i.test(error.message || "") ? "C'est déjà ton mot de passe actuel." : /reauth|recent/i.test(error.message || "") ? "Pour des raisons de sécurité, reconnecte-toi avec un lien puis recommence." : /weak|short|least/i.test(error.message || "") ? "Mot de passe trop simple : allonge-le ou ajoute des chiffres et symboles." : "Enregistrement impossible : " + error.message); }
-    closeModal(); toast("Mot de passe enregistré");
+    modalLocked = false; closeModal(); toast("Mot de passe enregistré");
   });
 }
 async function sendLink(email) {
@@ -858,7 +861,8 @@ async function linkMember(memberId, userId, email) {
 async function refreshAdmin() { const { data } = await sb.rpc("is_admin"); state.me.isAdmin = data === true; }
 
 /* ================= modales ================= */
-function closeModal() { $("modalRoot").innerHTML = ""; }
+let modalLocked = false; // modale qu'on ne peut pas fermer (mot de passe provisoire à remplacer)
+function closeModal() { if (modalLocked) return; $("modalRoot").innerHTML = ""; }
 function openModal(html) { $("modalRoot").innerHTML = `<div class="overlay" id="ov">${html}</div>`; }
 function missionOptions(list, selected) {
   return TYPE_ORDER.map(t => { const ms = list.filter(m => m.type === t); if (!ms.length) return "";
@@ -1241,6 +1245,7 @@ function memberModal(id) {
     <div class="form-grid">
       <label class="f">Nom<input id="cName" required value="${esc(m.name)}"></label>
       <label class="f">E-mail<input type="email" id="cEmail" value="${esc(memberEmail(m))}" placeholder="prenom.nom@${esc(DOMAINS[0] || "datatilt.com")}" ${hasEmailCol() || !state.members.length ? "" : "disabled title=\"Exécute supabase/migration_v3.sql pour activer ce champ\""}></label>
+      ${isNew ? `<label class="f">Mot de passe provisoire<input type="text" id="cPw" minlength="8" autocomplete="off" spellcheck="false" placeholder="Optionnel, 8 caractères min."><span class="muted small">Renseigné avec l'e-mail : le compte est créé tout de suite, sans e-mail envoyé.</span></label>` : ""}
       <label class="f">Groupe<select id="cGroup"><option value="">Sans groupe</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${m.group_id === g.id ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select></label>
       <label class="f">Rôle<select id="cRole">${ROLES.map(r => `<option ${m.role === r ? "selected" : ""}>${r}</option>`).join("")}</select><span class="muted small">Manager et Directeur de projet voient la vue d'ensemble de l'équipe.</span></label>
       <div class="full"><span class="eyebrow">Compétences</span><div class="checks">${SKILLS.map((s, i) => `<label><input type="checkbox" id="cSk${i}" ${(m.skills || []).includes(s) ? "checked" : ""}>${esc(s)}</label>`).join("")}</div></div>
@@ -1254,13 +1259,56 @@ function memberModal(id) {
     const body = { name: $("cName").value.trim(), group_id: $("cGroup").value || null, role: $("cRole").value, skills: SKILLS.filter((_, i) => $("cSk" + i).checked) };
     if (!body.name) return;
     if (!$("cEmail").disabled && (hasEmailCol() || $("cEmail").value.trim())) body.email = $("cEmail").value.trim() || null;
-    try { await q(isNew ? sb.from("members").insert(body) : sb.from("members").update(body).eq("id", id)); closeModal(); toast(isNew ? "Consultant ajouté" : "Consultant mis à jour"); await after(); } catch (err) { toast(errMsg(err)); }
+    const pw = isNew ? $("cPw").value : ""; const mail = $("cEmail").value.trim().toLowerCase();
+    if (pw && !acctCheck(mail, pw, t => toast(t))) return;
+    let saved = false;
+    try {
+      const row = await q(isNew ? sb.from("members").insert(body).select("id").single() : sb.from("members").update(body).eq("id", id));
+      saved = true;
+      if (pw) await q(sb.rpc("admin_create_account", { p_member: row.id, p_email: mail, p_password: pw }));
+      closeModal(); toast(pw ? `Consultant et compte créés : transmets le mot de passe à ${body.name}` : isNew ? "Consultant ajouté" : "Consultant mis à jour"); await after();
+    } catch (err) { if (saved) { closeModal(); await after(); toast("Consultant ajouté, mais compte non créé : " + acctErr(err)); } else toast(errMsg(err)); }
   });
   const del = $("cDel");
   if (del) del.onclick = async () => {
     if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = n ? `Confirmer (supprime aussi ${n} affectation${n > 1 ? "s" : ""})` : "Confirmer la suppression"; return; }
     try { await q(sb.from("members").delete().eq("id", id)); closeModal(); toast("Consultant supprimé"); await after(); } catch (err) { toast(errMsg(err)); }
   };
+}
+
+/* --- compte de connexion créé par un administrateur (sans e-mail) --- */
+function acctCheck(mail, pw, msg) {
+  if (mail !== null) {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) { msg("Saisis l'e-mail professionnel du consultant."); return false; }
+    if (DOMAINS.length && !DOMAINS.includes(mail.split("@")[1])) { msg(`Seules les adresses ${DOMAINS.map(d => "@" + d).join(", ")} sont autorisées.`); return false; }
+  }
+  if (pw.length < 8) { msg("Le mot de passe provisoire doit faire au moins 8 caractères."); return false; }
+  return true;
+}
+const acctErr = err => /admin_(create_account|set_password)|PGRST202/i.test(((err && err.message) || "") + ((err && err.code) || "")) && !(err && err.code === "P0001") ? "exécute d'abord supabase/migration_v4.sql dans Supabase." : errMsg(err);
+function accountModal(id, reset) {
+  const m = memberById(id); if (!m || !isAdmin()) return;
+  openModal(`<form class="modal" id="acForm" aria-label="Compte de connexion">
+    <h2>${reset ? "Nouveau mot de passe provisoire" : "Créer le compte"} · ${esc(m.name)}</h2>
+    <p class="muted small">${reset ? `Remplace le mot de passe de <strong>${esc(m.user_email || "")}</strong>.` : "Le compte est créé tout de suite, sans e-mail envoyé."} Transmets ce mot de passe à ${esc(m.name)} : il devra en choisir un nouveau à sa prochaine connexion.</p>
+    ${reset ? "" : `<label class="f">E-mail<input type="email" id="acMail" required value="${esc(memberEmail(m))}" placeholder="prenom.nom@${esc(DOMAINS[0] || "datatilt.com")}"></label>`}
+    <label class="f">Mot de passe provisoire<input type="text" id="acPw" required minlength="8" autocomplete="off" spellcheck="false"></label>
+    <p class="small" id="acMsg"></p>
+    <div class="row-actions"><span></span><div class="r"><button type="button" class="btn" id="acCancel">Annuler</button><button class="btn primary" type="submit" id="acSave">${reset ? "Enregistrer" : "Créer le compte"}</button></div></div>
+  </form>`);
+  (reset || memberEmail(m) ? $("acPw") : $("acMail")).focus();
+  $("acCancel").onclick = closeModal;
+  $("acForm").addEventListener("submit", async e => {
+    e.preventDefault();
+    const msg = t => $("acMsg").innerHTML = `<span style="color:var(--bad)">${esc(t)}</span>`;
+    const pw = $("acPw").value, mail = reset ? null : $("acMail").value.trim().toLowerCase();
+    if (!acctCheck(mail, pw, msg)) return;
+    $("acSave").disabled = true;
+    try {
+      await q(reset ? sb.rpc("admin_set_password", { p_member: id, p_password: pw }) : sb.rpc("admin_create_account", { p_member: id, p_email: mail, p_password: pw }));
+      closeModal(); toast(reset ? `Mot de passe provisoire enregistré pour ${m.name}` : `Compte créé : transmets le mot de passe à ${m.name}`); await after();
+    } catch (err) { $("acSave").disabled = false; msg(acctErr(err)); }
+  });
 }
 
 /* ================= événements ================= */
@@ -1300,6 +1348,8 @@ document.addEventListener("click", async e => {
   if (d.mi) { missionModal(d.mi); return; }
   if (d.massign) { const mm = missionById(d.massign); assignModal({ missionId: d.massign, pickMember: true, absence: mm && mm.type === "ABSENCE" }); return; }
   if (d.c) { memberModal(d.c); return; }
+  if (d.acct) { accountModal(d.acct, false); return; }
+  if (d.pwreset) { accountModal(d.pwreset, true); return; }
   if (t.id === "btnAddC") { memberModal(null); return; }
   if (t.id === "btnAddM") { missionModal(null); return; }
   if (t.id === "btnBulkM") { bulkMissionModal(); return; }
@@ -1374,6 +1424,7 @@ let currentUser = null;
 async function onSession(session) {
   const u = session && session.user;
   if (!u) {
+    modalLocked = false; closeModal();
     currentUser = null; state.me = { id: null, email: "", isAdmin: false }; state.loaded = false; state.tab = null;
     if (channel) { sb.removeChannel(channel); channel = null; }
     const err = new URLSearchParams(window.location.hash.slice(1)).get("error_description");
@@ -1385,7 +1436,7 @@ async function onSession(session) {
   state.me = { id: u.id, email: u.email || "", isAdmin: false };
   if (window.location.hash.includes("access_token")) history.replaceState(null, "", window.location.pathname);
   main().innerHTML = `<div class="state">Chargement du plan de charge…</div>`;
-  try { await refreshAdmin(); await loadAll(); subscribe(); render(); if (pwRecovery) { pwRecovery = false; passwordModal(true); } }
+  try { await refreshAdmin(); await loadAll(); subscribe(); render(); if (pwRecovery) { pwRecovery = false; passwordModal(true); } else if (u.user_metadata && u.user_metadata.must_change_password) passwordModal(false, true); }
   catch (e) { main().innerHTML = `<div class="panel state"><h2>Chargement impossible</h2><p>${esc(e.message || "Erreur de connexion à la base.")}</p><p class="muted small">As-tu exécuté <code>supabase/migration_v2.sql</code> ?</p><button class="btn" id="btnLogout">Se déconnecter</button></div>`; }
 }
 let pwRecovery = false;
