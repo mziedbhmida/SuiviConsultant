@@ -11,6 +11,11 @@
 
 create extension if not exists pgcrypto;
 
+-- E-mail de contact (déjà créé par migration_v3.sql si elle a été exécutée)
+alter table public.members add column if not exists email text;
+update public.members set email = user_email
+ where email is null and user_email is not null;
+
 -- ---------------------------------------------------------------------
 -- Créer le compte de connexion d'un profil
 -- ---------------------------------------------------------------------
