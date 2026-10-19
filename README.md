@@ -2,7 +2,7 @@
 
 Plan de charge et disponibilité des consultants DATATILT.
 
-Les administrateurs créent les **missions** (BUILD, RUN, avant-vente, interne, absences). Chaque collaborateur se connecte avec son e-mail professionnel (mot de passe provisoire donné par un administrateur, ou lien magique, puis mot de passe personnel), **s'affecte à ses missions** (pourcentage, jours de la semaine, jusqu'à la fin de la mission) et son planning se remplit tout seul. Il ajuste ensuite au jour près sur une grille de 3 semaines (absence, demi-journée, autre mission).
+Les administrateurs créent les **missions** (mission client, avant-vente, interne, absences). Chaque collaborateur se connecte avec son e-mail professionnel (mot de passe provisoire donné par un administrateur, ou lien magique, puis mot de passe personnel), **s'affecte à ses missions** (pourcentage, jours de la semaine, jusqu'à la fin de la mission) et son planning se remplit tout seul. Il ajuste ensuite au jour près sur une grille de 3 semaines (absence, demi-journée, autre mission).
 
 Les administrateurs pilotent les KPI : taux facturable, occupation, intercontrat, surcharges et fraîcheur des plannings.
 
@@ -41,6 +41,7 @@ Crée d'abord le dépôt **vide** sur github.com (bouton *New repository*, nom `
    Puis `supabase/migration_v3.sql` (e-mail des consultants pour les rappels).
    Puis `supabase/migration_v4.sql` (création des comptes par un administrateur, sans e-mail).
    Puis `supabase/migration_v5.sql` (un consultant peut appartenir à plusieurs groupes).
+   Puis `supabase/migration_v6.sql` (BUILD et RUN / TMA fusionnés en « Mission client »).
 5. *(Optionnel)* Pour avoir des données d'exemple, exécute `supabase/seed.sql`. Elles se suppriment ensuite en un clic dans l'application.
 6. Va dans **Project Settings → API** et copie :
    - **Project URL** ;
@@ -74,7 +75,7 @@ Dans Supabase, va dans **Authentication → URL Configuration** :
 ### 6. Premier lancement
 
 1. Ouvre l'application et connecte-toi avec l'e-mail déclaré administrateur.
-2. Dans **Missions** : crée le catalogue (une mission « sans date de fin » pour les BUILD à l'année et les TMA). Les motifs d'absence « Congés / absence » et « Temps partiel » existent déjà.
+2. Dans **Missions** : crée le catalogue (une mission « sans date de fin » pour les projets à l'année et les TMA). Les motifs d'absence « Congés / absence » et « Temps partiel » existent déjà.
 3. Dans **Administration** :
    - ajoute les autres administrateurs ;
    - crée les groupes (ex. Pôle PA, Pôle BOARD, Pôle IA). Un consultant peut appartenir à plusieurs groupes : coche-les dans sa fiche, ou utilise « Membres » sur un groupe ;
@@ -140,9 +141,9 @@ Ouvre ensuite <http://localhost:3000>. Pense à ajouter `http://localhost:3000` 
 - **Un jour** : si le jour a été ajusté manuellement, c'est cet ajustement qui compte ; sinon, ce sont les missions récurrentes actives ce jour-là (période de l'affectation, dates de la mission, jours de la semaine choisis).
 - **Absences** : une absence récurrente (congés, temps partiel) suspend les missions au prorata. Une demi-journée d'absence divise la mission par deux ce jour-là.
 - **Capacité nette** : 1 jour par jour ouvré, moins les jours fériés français (calculés automatiquement, Pâques inclus) et les absences.
-- **Taux facturable** : (BUILD + RUN) / capacité nette.
-- **Taux d'occupation** : (BUILD + RUN + avant-vente + interne) / capacité nette.
-- **Intercontrat** : consultant facturable (BUILD + RUN) à moins de 50 % de sa capacité nette sur la semaine en cours. L'interne, l'avant-vente et une mission « Interco » ne comptent pas comme facturable ; un consultant absent toute la semaine n'est pas compté.
+- **Taux facturable** : missions client / capacité nette.
+- **Taux d'occupation** : (missions client + avant-vente + interne) / capacité nette.
+- **Intercontrat** : consultant facturable (missions client) à moins de 50 % de sa capacité nette sur la semaine en cours. L'interne, l'avant-vente et une mission « Interco » ne comptent pas comme facturable ; un consultant absent toute la semaine n'est pas compté.
 - **Surcharge** : jour où la charge dépasse 100 %.
 - **Planning à jour** : planning modifié ou confirmé il y a moins de 14 jours (paramétrable dans `config.js`).
 - Les missions **probables** peuvent être inclus ou exclus des calculs grâce à l'interrupteur.

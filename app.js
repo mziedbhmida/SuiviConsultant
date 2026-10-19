@@ -5,14 +5,14 @@
 const CFG = window.APP_CONFIG || {};
 const DAY = 864e5;
 const TYPES = {
-  BUILD:   { label: "BUILD", color: "var(--t-build)" },
-  RUN:     { label: "RUN · TMA", color: "var(--t-run)" },
+  BUILD:   { label: "Mission client", color: "var(--t-build)" },
+  RUN:     { label: "Mission client", color: "var(--t-build)" }, // ancien type, fusionné avec BUILD (migration_v6)
   AVV:     { label: "Avant-vente / POC IA", color: "var(--t-avv)" },
   INTERNE: { label: "Interne / formation", color: "var(--t-int)" },
   ABSENCE: { label: "Absence / congés", color: "var(--t-abs)" }
 };
-const TYPE_ORDER = ["BUILD", "RUN", "AVV", "INTERNE", "ABSENCE"];
-const WORK_TYPES = ["BUILD", "RUN", "AVV", "INTERNE"];
+const TYPE_ORDER = ["BUILD", "AVV", "INTERNE", "ABSENCE"];
+const WORK_TYPES = ["BUILD", "AVV", "INTERNE"];
 const SKILLS = ["Planning Analytics", "BOARD", "Watson Orchestrate", "Gestion de projet"];
 const ROLES = ["Consultant", "Consultant senior", "Manager", "Directeur de projet"];
 const TARGET_BILL = CFG.TARGET_BILLABLE || 0.8;
@@ -162,7 +162,7 @@ function dayCell(mid, t, incl) {
     const v = p.pct / 100;
     if (p.m.type === "ABSENCE") { r.abs += v; continue; }
     if (p.m.status === "probable") { r.prob += v; if (!incl) continue; }
-    r[p.m.type] += v;
+    r[p.m.type === "RUN" ? "BUILD" : p.m.type] += v;
   }
   finish(r); CACHE.set(key, r); return r;
 }
@@ -199,7 +199,7 @@ function renderKpis(k) {
   const tile = (label, v, cls, sub, extra = "") => `<div class="kpi"><span class="eyebrow">${label}</span><span class="v ${cls}">${v}</span>${extra}<span class="s">${sub}</span></div>`;
   const g = k.bill == null ? "" : `<div class="gauge" aria-hidden="true"><i style="width:${Math.min(100, k.bill * 100)}%"></i><b style="left:${TARGET_BILL * 100}%"></b></div>`;
   return `<section class="kpis" aria-label="Indicateurs">
-    ${tile("Taux facturable", pct(k.bill), billCls, `BUILD + RUN · objectif ${Math.round(TARGET_BILL * 100)} %`, g)}
+    ${tile("Taux facturable", pct(k.bill), billCls, `Missions client · objectif ${Math.round(TARGET_BILL * 100)} %`, g)}
     ${tile("Taux d'occupation", pct(k.occ), "", `dont ${pct(k.avvShare)} en avant-vente IA`)}
     ${tile("Jours disponibles", d1(k.free), "", `${d1(k.freeWeek)} j cette semaine · ${d1(k.prob)} j probables ${state.prob ? "inclus" : "exclus"}`)}
     ${tile("Intercontrat", k.inter.length, k.inter.length ? "warn" : "good", k.inter.length ? esc(k.inter.slice(0, 3).join(", ")) + (k.inter.length > 3 ? "…" : "") : "Tout le monde est facturable à 50 % ou plus cette semaine")}
@@ -219,8 +219,8 @@ function alerts() {
       const r = dayCell(c.id, D[i], state.prob);
       if (r.load != null && r.load > 1.001) {
         let j = i, mx = 0, both = false;
-        while (j < D.length) { const rj = dayCell(c.id, D[j], state.prob); if (!(rj.load != null && rj.load > 1.001)) break; mx = Math.max(mx, rj.load); if (rj.AVV > 0 && rj.RUN > 0) both = true; j++; }
-        out.push({ lvl: "bad", w: 3, t: `<strong>${esc(c.name)}</strong> en surcharge (${pct(mx)}) ${j - i > 1 ? `du ${frDate(D[i])} au ${frDate(D[j - 1])}` : `le ${frDate(D[i])}`}`, m: both ? "TMA et avant-vente IA le même jour : l'avant-vente risque de sauter" : "Arbitrer ou décaler une affectation" });
+        while (j < D.length) { const rj = dayCell(c.id, D[j], state.prob); if (!(rj.load != null && rj.load > 1.001)) break; mx = Math.max(mx, rj.load); if (rj.AVV > 0 && rj.BUILD > 0) both = true; j++; }
+        out.push({ lvl: "bad", w: 3, t: `<strong>${esc(c.name)}</strong> en surcharge (${pct(mx)}) ${j - i > 1 ? `du ${frDate(D[i])} au ${frDate(D[j - 1])}` : `le ${frDate(D[i])}`}`, m: both ? "Mission client et avant-vente IA le même jour : l'avant-vente risque de sauter" : "Arbitrer ou décaler une affectation" });
         i = j;
       } else i++;
     }
@@ -666,7 +666,7 @@ function viewMissions() {
   }).join("");
   return `<div class="bar"><div class="seg" role="group" aria-label="Filtre">${[["actives", "Actives"], ["archivees", "Archivées"], ["toutes", "Toutes"]].map(([k, l]) => `<button data-mf="${k}" aria-pressed="${f === k}">${l}</button>`).join("")}</div><div class="bar"><button class="btn" id="btnBulkM">Import en masse</button><button class="btn primary" id="btnAddM">+ Mission</button></div></div>
   <section class="panel"><div class="panel-head"><h2>Catalogue des missions</h2>${sel.size ? `<div class="bar selbar"><strong>${sel.size} sélectionnée${sel.size > 1 ? "s" : ""}</strong><button class="btn small" id="mSelNone">Désélectionner</button><button class="btn small" id="mSelArch">Archiver</button><button class="btn small" id="mSelUnarch">Réactiver</button><button class="btn small danger" id="mSelDel">Supprimer</button></div>` : `<span class="eyebrow">${list.length} mission${list.length > 1 ? "s" : ""}</span>`}</div>
-    <p class="muted small">Les collaborateurs choisissent dans ce catalogue. Une mission sans date de fin (ex. BUILD à l'année, TMA) remplit leur planning en continu. Les missions de type Absence (congés, temps partiel) sont proposées à tous dans « Poser une absence ».</p>
+    <p class="muted small">Les collaborateurs choisissent dans ce catalogue. Une mission sans date de fin (ex. projet à l'année, TMA) remplit leur planning en continu. Les missions de type Absence (congés, temps partiel) sont proposées à tous dans « Poser une absence ».</p>
     <div class="scroll"><table class="list"><thead><tr><th class="chk"><input type="checkbox" id="mSelAll" ${allSel ? "checked" : ""} ${list.length ? "" : "disabled"} aria-label="Tout sélectionner"></th><th>Mission</th><th>Type</th><th>Statut</th><th>Période</th><th>Consultants</th><th>Charge 3 sem.</th><th></th></tr></thead><tbody>${rows || `<tr><td colspan="8" class="empty-note">Aucune mission. Commence par « + Mission ».</td></tr>`}</tbody></table></div></section>`;
 }
 
@@ -1061,8 +1061,7 @@ async function runDelete(ids, force) {
 const normTxt = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 function parseType(s, def) {
   const x = normTxt(s); if (!x) return def;
-  if (x.startsWith("build")) return "BUILD";
-  if (x.startsWith("run") || x.includes("tma")) return "RUN";
+  if (x.startsWith("build") || x.startsWith("run") || x.includes("tma") || x.startsWith("client") || x.startsWith("mission")) return "BUILD";
   if (x.startsWith("avv") || x.includes("avant") || x.includes("poc") || x.includes("presales")) return "AVV";
   if (x.startsWith("int") || x.includes("formation")) return "INTERNE";
   if (x.startsWith("abs") || x.includes("conge")) return "ABSENCE";
@@ -1081,7 +1080,7 @@ function bulkMissionModal() {
   openModal(`<form class="modal wide" id="bForm" aria-label="Import de missions en masse">
     <h2>Import de missions en masse</h2>
     <p class="muted small">Colle les lignes copiées depuis Excel (une mission par ligne), ou sépare les colonnes par « ; ». Ordre des colonnes : <strong>Client ; Nom ; Type ; Statut ; Début ; Fin</strong>. Seul le nom est obligatoire et une ligne d'en-tête est ignorée. Avec une seule colonne, c'est le nom ; avec deux, le client puis le nom. Fin vide = sans date de fin.</p>
-    <textarea id="bText" rows="8" spellcheck="false" placeholder="L'Oréal;Budget PA 2027;BUILD;ferme;01/11/2026;30/06/2027&#10;IGESA;TMA Board;RUN;ferme;01/01/2027;&#10;Michelin;POC IA prévisions;Avant-vente;probable;15/11/2026;15/12/2026"></textarea>
+    <textarea id="bText" rows="8" spellcheck="false" placeholder="L'Oréal;Budget PA 2027;Client;ferme;01/11/2026;30/06/2027&#10;IGESA;TMA Board;Client;ferme;01/01/2027;&#10;Michelin;POC IA prévisions;Avant-vente;probable;15/11/2026;15/12/2026"></textarea>
     <div class="form-grid">
       <label class="f">Type par défaut<select id="bType">${TYPE_ORDER.map(k => `<option value="${k}">${TYPES[k].label}</option>`).join("")}</select></label>
       <label class="f">Statut par défaut<select id="bStatus"><option value="ferme">Ferme</option><option value="probable">Probable</option></select></label>
@@ -1147,7 +1146,7 @@ function missionModal(id) {
       <label class="f">Statut<select id="mStatus"><option value="ferme" ${m.status !== "probable" ? "selected" : ""}>Ferme (signée / confirmée)</option><option value="probable" ${m.status === "probable" ? "selected" : ""}>Probable (pipeline)</option></select></label>
       <label class="f">Début<input type="date" id="mStart" value="${esc(m.start_date || "")}"></label>
       <label class="f">Fin<input type="date" id="mEnd" value="${esc(m.end_date || "")}" ${m.end_date ? "" : "disabled"}></label>
-      <div class="full checks"><label><input type="checkbox" id="mNoEnd" ${m.end_date ? "" : "checked"}> Sans date de fin (BUILD à l'année, TMA…)</label><label><input type="checkbox" id="mArch" ${m.active === false ? "checked" : ""}> Archivée (n'est plus proposée)</label></div>
+      <div class="full checks"><label><input type="checkbox" id="mNoEnd" ${m.end_date ? "" : "checked"}> Sans date de fin (projet à l'année, TMA…)</label><label><input type="checkbox" id="mArch" ${m.active === false ? "checked" : ""}> Archivée (n'est plus proposée)</label></div>
     </div>
     ${isNew ? "" : `<div class="stack-s"><div class="panel-head"><span class="eyebrow">Consultants affectés (${asg.length})</span><button type="button" class="btn small" id="mAssign">+ Affecter un consultant</button></div>
       <ul class="mstaff">${asg.map(a => `<li><span><strong>${esc(cName(a.member_id))}</strong> · ${a.pct} % · ${wdTxt(a.weekdays)}<br><span class="mono muted small">${periodTxt(a)}</span></span><button type="button" class="btn small" data-ma="${esc(a.id)}">Modifier</button></li>`).join("") || `<li class="empty-note">Personne n'est affecté à cette mission.</li>`}</ul></div>`}
