@@ -26,7 +26,8 @@ set search_path = public, extensions, auth
 as $$
 declare
   v_email text := lower(trim(coalesce(p_email, '')));
-  v_uid   uuid := gen_random_uuid();
+  v_uid   uuid;
+  v_other text;
   v_now   timestamptz := now();
 begin
   if not public.is_admin() then
@@ -44,9 +45,32 @@ begin
   if exists (select 1 from public.members where id = p_member and user_id is not null) then
     raise exception 'Ce profil est déjà rattaché à un compte';
   end if;
-  if exists (select 1 from auth.users where lower(email) = v_email) then
-    raise exception 'Un compte existe déjà pour %. La personne peut se connecter et choisir son nom dans « Mon planning ».', v_email;
+  -- Compte déjà existant (lien de connexion demandé un jour, création dans Supabase…) :
+  -- on le rattache et on lui donne le mot de passe provisoire
+  select id into v_uid from auth.users where lower(email) = v_email;
+  if found then
+    select name into v_other from public.members where user_id = v_uid and id <> p_member;
+    if v_other is not null then
+      raise exception 'Le compte % est déjà rattaché au profil « % ». Détache-le d''abord.', v_email, v_other;
+    end if;
+    update auth.users
+       set encrypted_password = crypt(p_password, gen_salt('bf')),
+           email_confirmed_at = coalesce(email_confirmed_at, v_now),
+           raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb) || '{"must_change_password":true}'::jsonb,
+           updated_at = v_now
+     where id = v_uid;
+    if not exists (select 1 from auth.identities where user_id = v_uid and provider = 'email') then
+      insert into auth.identities (id, user_id, provider_id, provider, identity_data, last_sign_in_at, created_at, updated_at)
+      values (gen_random_uuid(), v_uid, v_uid::text, 'email',
+              jsonb_build_object('sub', v_uid::text, 'email', v_email, 'email_verified', true), null, v_now, v_now);
+    end if;
+    update public.members
+       set user_id = v_uid, user_email = v_email, email = coalesce(nullif(trim(email), ''), v_email)
+     where id = p_member;
+    delete from public.claims where user_id = v_uid;
+    return v_uid;
   end if;
+  v_uid := gen_random_uuid();
 
   -- le trigger enforce_email_domain vérifie le domaine autorisé
   insert into auth.users (

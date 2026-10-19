@@ -1290,7 +1290,7 @@ function accountModal(id, reset) {
   const m = memberById(id); if (!m || !isAdmin()) return;
   openModal(`<form class="modal" id="acForm" aria-label="Compte de connexion">
     <h2>${reset ? "Nouveau mot de passe provisoire" : "Créer le compte"} · ${esc(m.name)}</h2>
-    <p class="muted small">${reset ? `Remplace le mot de passe de <strong>${esc(m.user_email || "")}</strong>.` : "Le compte est créé tout de suite, sans e-mail envoyé."} Transmets ce mot de passe à ${esc(m.name)} : il devra en choisir un nouveau à sa prochaine connexion.</p>
+    <p class="muted small">${reset ? `Remplace le mot de passe de <strong>${esc(m.user_email || "")}</strong>.` : "Le compte est créé tout de suite, sans e-mail envoyé (s'il existe déjà, il est rattaché à ce profil)."} Transmets ce mot de passe à ${esc(m.name)} : il devra en choisir un nouveau à sa prochaine connexion.</p>
     ${reset ? "" : `<label class="f">E-mail<input type="email" id="acMail" required value="${esc(memberEmail(m))}" placeholder="prenom.nom@${esc(DOMAINS[0] || "datatilt.com")}"></label>`}
     <label class="f">Mot de passe provisoire<input type="text" id="acPw" required minlength="8" autocomplete="off" spellcheck="false"></label>
     <p class="small" id="acMsg"></p>
