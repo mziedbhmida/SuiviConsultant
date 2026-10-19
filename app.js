@@ -89,6 +89,11 @@ const d1 = x => (Math.round(x * 10) / 10).toLocaleString("fr-FR");
 const esc = s => String(s ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 const memberById = id => state.members.find(m => m.id === id);
 const groupName = id => (state.groups.find(g => g.id === id) || {}).name || "Sans groupe";
+/* un consultant peut appartenir à plusieurs groupes (group_ids, migration_v5) */
+const memberGroups = m => Array.isArray(m.group_ids) && m.group_ids.length ? m.group_ids : m.group_id ? [m.group_id] : [];
+const inGroup = (m, gid) => memberGroups(m).includes(gid);
+const groupNames = m => { const n = memberGroups(m).map(id => (state.groups.find(g => g.id === id) || {}).name).filter(Boolean); return n.length ? n.join(", ") : "Sans groupe"; };
+const hasGroupsCol = () => state.members.some(x => "group_ids" in x);
 const cName = id => (memberById(id) || {}).name || "—";
 const isAdmin = () => state.me.isAdmin;
 const MANAGER_ROLES = ["Manager", "Directeur de projet"];
@@ -176,7 +181,7 @@ function columns() {
 const cellAt = (mid, col, incl = state.prob) => col.kind === "day" ? dayCell(mid, col.t, incl) : weekCell(mid, col.t, incl);
 function horizonDays() { const m0 = monday(TODAY); return workdaysBetween(m0, m0 + state.h * 7 * DAY - DAY); }
 function band(r) { if (!r || r.days === 0) return "hol"; if (r.load == null) return "abs"; if (r.load > 1.001) return "over"; if (r.load >= .85) return "ok"; if (r.load >= .5) return "mid"; return "low"; }
-function rebuild() { state.consultants = state.members.filter(m => !state.group || m.group_id === state.group); }
+function rebuild() { state.consultants = state.members.filter(m => !state.group || inGroup(m, state.group)); }
 
 /* ================= KPI ================= */
 function kpis() {
@@ -297,7 +302,7 @@ function cellHtml(c, r, col, showFree) {
 function legendHtml() { return `<div class="heat-legend"><span><i class="sw" style="background:var(--h-low)"></i>&lt; 50 %</span><span><i class="sw" style="background:var(--h-mid)"></i>50–85 %</span><span><i class="sw" style="background:var(--h-ok)"></i>85–100 % · cible</span><span><i class="sw" style="background:var(--h-over)"></i>&gt; 100 % · surcharge</span><span><i class="sw hatch"></i>Absent ou férié</span><span><i class="p" style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--t-avv)"></i>contient du probable</span></div>`; }
 function renderHeat(cols) {
   const order = [...state.groups.map(g => g.id), ""];
-  const byG = order.map(gid => ({ gid, list: state.consultants.filter(c => gid ? c.group_id === gid : !state.groups.some(g => g.id === c.group_id)) })).filter(x => x.list.length);
+  const byG = order.map(gid => ({ gid, list: state.consultants.filter(c => gid ? inGroup(c, gid) : !state.groups.some(g => inGroup(c, g.id))) })).filter(x => x.list.length);
   const rows = byG.map(({ gid, list }) => `${state.group ? "" : `<tr class="grp"><td colspan="${cols.length + 1}">${esc(gid ? groupName(gid) : "Sans groupe")} · ${list.length}</td></tr>`}` + list.map(c => {
     const f = freshness(c);
     return `<tr><th class="who" scope="row"><button data-plan="${esc(c.id)}"><span class="n"><i class="fresh ${f.cls}" title="${esc(f.label)}"></i>${esc(c.name)}</span><span class="r">${esc(c.role || "")} · ${esc(f.label.toLowerCase())}</span></button></th>${cols.map(col => cellHtml(c, cellAt(c.id, col), col, false)).join("")}</tr>`;
@@ -361,7 +366,7 @@ function viewTeam() {
   if (!state.members.length) return `<div class="panel state"><h2>L'équipe n'est pas encore créée</h2><p>${isAdmin() ? "Crée les missions, puis les groupes et les consultants dans l'administration." : "L'administrateur n'a pas encore ajouté l'équipe."}</p>${isAdmin() ? `<button class="btn primary" data-tab="admin">Aller à l'administration</button>` : ""}</div>`;
   const cols = columns(); const last = cols[cols.length - 1].t;
   const bar = `<div class="bar"><div class="controls">
-      <select class="sel" id="gSel" aria-label="Groupe"><option value="">Toute l'équipe (${state.members.length})</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${state.group === g.id ? "selected" : ""}>${esc(g.name)} (${state.members.filter(m => m.group_id === g.id).length})</option>`).join("")}</select>
+      <select class="sel" id="gSel" aria-label="Groupe"><option value="">Toute l'équipe (${state.members.length})</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${state.group === g.id ? "selected" : ""}>${esc(g.name)} (${state.members.filter(m => inGroup(m, g.id)).length})</option>`).join("")}</select>
       <div class="seg" role="group" aria-label="Horizon">${HORIZONS.map(h => `<button data-h="${h}" aria-pressed="${state.h === h}">${h === 3 ? "3 sem. · par jour" : h + " sem."}</button>`).join("")}</div>
       ${canOverview() ? `<label class="toggle"><input type="checkbox" id="optProb" ${state.prob ? "checked" : ""}> Inclure le probable</label>` : ""}</div>
     <div class="controls"><span class="muted" style="font-size:.85rem">S${isoWeek(cols[0].t)} à S${isoWeek(last)}</span>${isAdmin() ? `<button class="btn small" id="btnRemind">✉ Envoyer un rappel</button>` : ""}</div></div>`;
@@ -383,7 +388,7 @@ function viewPlanning() {
     if (cm) return selector + `<section class="panel state"><h2>Rattachement en attente</h2><p>Tu as demandé à être rattaché(e) au profil <strong>${esc(cm.name)}</strong>. Dès que l'administrateur aura validé, tu pourras remplir ton planning ici.</p><button class="btn" id="btnUnclaim">Changer de profil</button></section>`;
     const free = state.members.filter(x => !x.user_id);
     return selector + `<section class="panel"><h2>Qui es-tu ?</h2><p class="muted">Choisis ton nom une seule fois. ${isAdmin() ? "Comme administrateur, le rattachement est immédiat." : "L'administrateur valide ensuite le rattachement à ton compte."}</p>
-      ${free.length ? `<ul class="pick">${free.map(x => `<li><button data-claim="${esc(x.id)}"><strong>${esc(x.name)}</strong><span class="muted" style="font-size:.8rem">${esc(groupName(x.group_id))} · ${esc(x.role || "")}</span></button></li>`).join("")}</ul>` : `<p class="empty-note">Aucun profil disponible. Demande à l'administrateur de créer le tien.</p>`}</section>`;
+      ${free.length ? `<ul class="pick">${free.map(x => `<li><button data-claim="${esc(x.id)}"><strong>${esc(x.name)}</strong><span class="muted" style="font-size:.8rem">${esc(groupNames(x))} · ${esc(x.role || "")}</span></button></li>`).join("")}</ul>` : `<p class="empty-note">Aucun profil disponible. Demande à l'administrateur de créer le tien.</p>`}</section>`;
   }
   const ro = !canEditMember(m); const self = own && m.id === own.id;
   const back = !isAdmin() && !self ? `<div class="banner"><span>Planning de <strong>${esc(m.name)}</strong> · lecture seule</span>${own ? `<button class="btn small" id="btnBackMine">Revenir à mon planning</button>` : ""}</div>` : "";
@@ -428,7 +433,7 @@ function viewPlanning() {
   const absn = mine.filter(a => { const x = missionById(a.mission_id); return x && x.type === "ABSENCE" && aEnd(a) >= TODAY; });
 
   return `${selector}${back}
-  <section class="panel hello"><div><span class="eyebrow">${esc(groupName(m.group_id))} · ${esc(m.role || "")}</span><h2 style="font-size:1.4rem">${esc(m.name)}</h2>
+  <section class="panel hello"><div><span class="eyebrow">${esc(groupNames(m))} · ${esc(m.role || "")}</span><h2 style="font-size:1.4rem">${esc(m.name)}</h2>
     <p class="${stale ? "" : "muted"}" style="${stale ? "color:var(--warn)" : ""}">${freshTxt}${stale && !ro ? " Vérifie tes 3 prochaines semaines puis confirme." : ""}</p></div>
     ${ro ? "" : `<div class="actions"><button class="btn" id="btnConfirm">Confirmer le planning</button><button class="btn" id="btnAbsence">Poser une absence</button><button class="btn primary" id="btnAssign">+ Affecter à une mission</button></div>`}</section>
   <section class="panel"><div class="panel-head"><h2>Vue sur 3 semaines</h2>
@@ -678,7 +683,7 @@ function viewAdmin() {
       <form class="inline" id="adAddForm"><input type="email" id="adNew" list="adSugg" placeholder="prenom.nom@${esc(DOMAINS[0] || "datatilt.com")}" required aria-label="E-mail du nouvel administrateur"><datalist id="adSugg">${sugg.map(x => `<option value="${esc(x.user_email)}">${esc(x.name)}</option>`).join("")}</datalist><button class="btn primary small" type="submit">Ajouter</button></form>
       <p class="muted small">Un administrateur gère les missions, l'équipe et les groupes, et peut modifier tous les plannings. Il se connecte avec cet e-mail.</p></section>
     <section class="panel"><div class="panel-head"><h2>Groupes</h2></div>
-      <ul class="mstaff">${state.groups.map(g => { const n = state.members.filter(m => m.group_id === g.id).length; return `<li><div class="inline"><input id="gName-${esc(g.id)}" value="${esc(g.name)}" aria-label="Nom du groupe"><button class="btn small" data-grename="${esc(g.id)}">Renommer</button></div><button class="btn small danger" data-gdel="${esc(g.id)}" ${n ? `disabled title="Le groupe contient ${n} consultant(s)"` : ""}>Supprimer</button></li>`; }).join("") || `<li class="empty-note">Aucun groupe.</li>`}</ul>
+      <ul class="mstaff">${state.groups.map(g => { const n = state.members.filter(m => inGroup(m, g.id)).length; return `<li><div class="inline"><input id="gName-${esc(g.id)}" value="${esc(g.name)}" aria-label="Nom du groupe"><button class="btn small" data-grename="${esc(g.id)}">Renommer</button></div>${hasGroupsCol() ? `<button class="btn small" data-gmem="${esc(g.id)}">Membres (${n})</button> ` : ""}<button class="btn small danger" data-gdel="${esc(g.id)}" ${n ? `disabled title="Le groupe contient ${n} consultant(s)"` : ""}>Supprimer</button></li>`; }).join("") || `<li class="empty-note">Aucun groupe.</li>`}</ul>
       <form class="inline" id="gAddForm"><input id="gNew" placeholder="Nouveau groupe, ex. Pôle IA & Agents" required aria-label="Nom du nouveau groupe"><button class="btn primary small" type="submit">Ajouter</button></form>
     </section>
   </div>
@@ -686,7 +691,7 @@ function viewAdmin() {
     <ol class="steps"><li>Crée son profil ci-dessous avec son e-mail ${esc(DOMAINS.map(d => "@" + d).join(" ou "))} et un mot de passe provisoire (ou « Créer le compte » sur un profil existant). Aucun e-mail n'est envoyé.</li><li>Transmets-lui l'adresse de l'application et ce mot de passe.</li><li>À sa première connexion, il choisit son propre mot de passe, puis s'affecte à ses missions en quelques clics.</li></ol>
     <p class="muted small">Autre possibilité : il se connecte par lien, choisit son nom dans « Mon planning » et tu valides la demande en haut de cette page.</p></section>
   <section class="panel"><div class="panel-head"><h2>Équipe</h2><button class="btn primary" id="btnAddC">+ Consultant</button></div>
-    <div class="scroll"><table class="list"><thead><tr><th>Consultant</th><th>Groupe</th><th>Rôle</th><th>Compte</th><th>Planning</th><th></th></tr></thead><tbody>${state.members.map(m => { const f = freshness(m); return `<tr><td><strong>${esc(m.name)}</strong></td><td>${esc(groupName(m.group_id))}</td><td>${esc(m.role || "")}</td><td>${m.user_id ? esc(m.user_email || "Compte rattaché") : `<span class="pill">Non rattaché</span>`}</td><td><span class="person"><i class="fresh ${f.cls}"></i>${esc(f.label)}</span></td><td style="white-space:nowrap"><button class="btn small" data-c="${esc(m.id)}">Modifier</button> <button class="btn small" data-plan="${esc(m.id)}">Planning</button>${m.user_id ? ` <button class="btn small" data-pwreset="${esc(m.id)}">Mot de passe</button> <button class="btn small" data-unlink="${esc(m.id)}">Détacher</button>` : ` <button class="btn small primary" data-acct="${esc(m.id)}">Créer le compte</button>`}</td></tr>`; }).join("") || `<tr><td colspan="6" class="empty-note">Aucun consultant.</td></tr>`}</tbody></table></div></section>`;
+    <div class="scroll"><table class="list"><thead><tr><th>Consultant</th><th>Groupes</th><th>Rôle</th><th>Compte</th><th>Planning</th><th></th></tr></thead><tbody>${state.members.map(m => { const f = freshness(m); return `<tr><td><strong>${esc(m.name)}</strong></td><td>${esc(groupNames(m))}</td><td>${esc(m.role || "")}</td><td>${m.user_id ? esc(m.user_email || "Compte rattaché") : `<span class="pill">Non rattaché</span>`}</td><td><span class="person"><i class="fresh ${f.cls}"></i>${esc(f.label)}</span></td><td style="white-space:nowrap"><button class="btn small" data-c="${esc(m.id)}">Modifier</button> <button class="btn small" data-plan="${esc(m.id)}">Planning</button>${m.user_id ? ` <button class="btn small" data-pwreset="${esc(m.id)}">Mot de passe</button> <button class="btn small" data-unlink="${esc(m.id)}">Détacher</button>` : ` <button class="btn small primary" data-acct="${esc(m.id)}">Créer le compte</button>`}</td></tr>`; }).join("") || `<tr><td colspan="6" class="empty-note">Aucun consultant.</td></tr>`}</tbody></table></div></section>`;
 }
 
 /* ================= connexion ================= */
@@ -1199,7 +1204,7 @@ function remindModal() {
     <div class="bar"><div class="checks"><label><input type="checkbox" id="rAll"> Tout cocher</label></div><span class="muted small" id="rCount"></span></div>
     <div class="scroll" id="rList" style="max-height:300px;overflow:auto"><table class="list"><thead><tr><th></th><th>Consultant</th><th>État</th><th>E-mail</th><th></th></tr></thead><tbody>${list.map(({ m, g }, i) => {
       const em = memberEmail(m);
-      return `<tr><td><input type="checkbox" class="rChk" data-ri="${i}" ${g.need && em ? "checked" : ""} ${em ? "" : "disabled"} aria-label="${esc(m.name)}"></td><td><strong>${esc(m.name)}</strong><br><span class="muted small">${esc(groupName(m.group_id))}</span></td>
+      return `<tr><td><input type="checkbox" class="rChk" data-ri="${i}" ${g.need && em ? "checked" : ""} ${em ? "" : "disabled"} aria-label="${esc(m.name)}"></td><td><strong>${esc(m.name)}</strong><br><span class="muted small">${esc(groupNames(m))}</span></td>
         <td class="small"><span class="pill ${g.need ? "wait" : "ok"}">${esc(gapText(g))}</span></td>
         <td class="small">${em ? esc(em) : canEdit ? `<input type="email" class="rEm" data-ri="${i}" placeholder="e-mail manquant" aria-label="E-mail de ${esc(m.name)}">` : `<span class="muted">e-mail inconnu</span>`}</td>
         <td><button type="button" class="btn small" data-rone="${i}" ${em ? "" : "disabled"} title="Message personnalisé" aria-label="Message personnalisé à ${esc(m.name)}">✉</button></td></tr>`;
@@ -1238,16 +1243,17 @@ function remindModal() {
 /* --- consultant (admin) --- */
 function memberModal(id) {
   const admin = isAdmin(); if (!admin) return; const isNew = !id;
-  const m = memberById(id) || { name: "", role: "Consultant", skills: [], group_id: state.group || (state.groups[0] || {}).id || "" };
-  const n = isNew ? 0 : (IDX.assign[id] || []).length;
+  const m = memberById(id) || { name: "", role: "Consultant", skills: [], group_ids: [state.group || (state.groups[0] || {}).id].filter(Boolean) };
+  const n = isNew ? 0 : (IDX.assign[id] || []).length; const multiG = hasGroupsCol();
   openModal(`<form class="modal" id="cForm" aria-label="Consultant">
     <h2>${isNew ? "Nouveau consultant" : esc(m.name)}</h2>
     <div class="form-grid">
       <label class="f">Nom<input id="cName" required value="${esc(m.name)}"></label>
       <label class="f">E-mail<input type="email" id="cEmail" value="${esc(memberEmail(m))}" placeholder="prenom.nom@${esc(DOMAINS[0] || "datatilt.com")}" ${hasEmailCol() || !state.members.length ? "" : "disabled title=\"Exécute supabase/migration_v3.sql pour activer ce champ\""}></label>
       ${isNew ? `<label class="f">Mot de passe provisoire<input type="text" id="cPw" minlength="8" autocomplete="off" spellcheck="false" placeholder="Optionnel, 8 caractères min."><span class="muted small">Renseigné avec l'e-mail : le compte est créé tout de suite, sans e-mail envoyé.</span></label>` : ""}
-      <label class="f">Groupe<select id="cGroup"><option value="">Sans groupe</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${m.group_id === g.id ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select></label>
+      ${multiG ? "" : `<label class="f">Groupe<select id="cGroup"><option value="">Sans groupe</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${inGroup(m, g.id) ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select><span class="muted small">Exécute supabase/migration_v5.sql pour choisir plusieurs groupes.</span></label>`}
       <label class="f">Rôle<select id="cRole">${ROLES.map(r => `<option ${m.role === r ? "selected" : ""}>${r}</option>`).join("")}</select><span class="muted small">Manager et Directeur de projet voient la vue d'ensemble de l'équipe.</span></label>
+      ${multiG ? `<div class="full"><span class="eyebrow">Groupes</span><div class="checks">${state.groups.map((g, i) => `<label><input type="checkbox" id="cG${i}" ${inGroup(m, g.id) ? "checked" : ""}>${esc(g.name)}</label>`).join("") || `<span class="muted small">Aucun groupe : crée-les dans le bloc « Groupes ».</span>`}</div></div>` : ""}
       <div class="full"><span class="eyebrow">Compétences</span><div class="checks">${SKILLS.map((s, i) => `<label><input type="checkbox" id="cSk${i}" ${(m.skills || []).includes(s) ? "checked" : ""}>${esc(s)}</label>`).join("")}</div></div>
     </div>
     <div class="row-actions">${isNew ? "<span></span>" : `<button type="button" class="btn danger" id="cDel">Supprimer</button>`}<div class="r">${isNew ? "" : `<button type="button" class="btn" id="cPlan">Voir le planning</button>`}<button type="button" class="btn" id="cCancel">Fermer</button><button class="btn primary" type="submit">Enregistrer</button></div></div>
@@ -1256,7 +1262,9 @@ function memberModal(id) {
   if ($("cPlan")) $("cPlan").onclick = () => { closeModal(); state.planMember = id; state.planOffset = 0; state.tab = "moi"; render(); };
   $("cForm").addEventListener("submit", async e => {
     e.preventDefault();
-    const body = { name: $("cName").value.trim(), group_id: $("cGroup").value || null, role: $("cRole").value, skills: SKILLS.filter((_, i) => $("cSk" + i).checked) };
+    const body = { name: $("cName").value.trim(), role: $("cRole").value, skills: SKILLS.filter((_, i) => $("cSk" + i).checked) };
+    if (multiG) { body.group_ids = state.groups.filter((_, i) => $("cG" + i).checked).map(g => g.id); body.group_id = body.group_ids[0] || null; }
+    else body.group_id = $("cGroup").value || null;
     if (!body.name) return;
     if (!$("cEmail").disabled && (hasEmailCol() || $("cEmail").value.trim())) body.email = $("cEmail").value.trim() || null;
     const pw = isNew ? $("cPw").value : ""; const mail = $("cEmail").value.trim().toLowerCase();
@@ -1274,6 +1282,30 @@ function memberModal(id) {
     if (del.dataset.armed !== "1") { del.dataset.armed = "1"; del.textContent = n ? `Confirmer (supprime aussi ${n} affectation${n > 1 ? "s" : ""})` : "Confirmer la suppression"; return; }
     try { await q(sb.from("members").delete().eq("id", id)); closeModal(); toast("Consultant supprimé"); await after(); } catch (err) { toast(errMsg(err)); }
   };
+}
+
+/* --- membres d'un groupe (un consultant peut être dans plusieurs groupes) --- */
+function groupMembersModal(gid) {
+  const g = state.groups.find(x => x.id === gid); if (!g || !isAdmin()) return;
+  const list = [...state.members].sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  openModal(`<form class="modal" id="gmForm" aria-label="Membres du groupe">
+    <h2>Membres · ${esc(g.name)}</h2>
+    <p class="muted small">Coche les consultants de ce groupe. Ils restent dans leurs autres groupes.</p>
+    <div class="checks" style="max-height:50vh;overflow:auto;flex-direction:column;flex-wrap:nowrap">${list.map((m, i) => `<label><input type="checkbox" id="gm${i}" ${inGroup(m, gid) ? "checked" : ""}>${esc(m.name)} <span class="muted small">${esc(groupNames(m))}</span></label>`).join("") || `<span class="muted small">Aucun consultant.</span>`}</div>
+    <div class="row-actions"><span></span><div class="r"><button type="button" class="btn" id="gmCancel">Annuler</button><button class="btn primary" type="submit" id="gmSave">Enregistrer</button></div></div>
+  </form>`);
+  $("gmCancel").onclick = closeModal;
+  $("gmForm").addEventListener("submit", async e => {
+    e.preventDefault(); $("gmSave").disabled = true;
+    const changes = list.map((m, i) => ({ m, on: $("gm" + i).checked })).filter(x => x.on !== inGroup(x.m, gid));
+    try {
+      for (const { m, on } of changes) {
+        const ids = on ? [...memberGroups(m), gid] : memberGroups(m).filter(x => x !== gid);
+        await q(sb.from("members").update({ group_ids: ids, group_id: ids[0] || null }).eq("id", m.id));
+      }
+      closeModal(); toast(changes.length ? `Groupe « ${g.name} » mis à jour` : "Aucun changement"); await after();
+    } catch (err) { $("gmSave").disabled = false; toast(errMsg(err)); }
+  });
 }
 
 /* --- compte de connexion créé par un administrateur (sans e-mail) --- */
@@ -1349,6 +1381,7 @@ document.addEventListener("click", async e => {
   if (d.massign) { const mm = missionById(d.massign); assignModal({ missionId: d.massign, pickMember: true, absence: mm && mm.type === "ABSENCE" }); return; }
   if (d.c) { memberModal(d.c); return; }
   if (d.acct) { accountModal(d.acct, false); return; }
+  if (d.gmem) { groupMembersModal(d.gmem); return; }
   if (d.pwreset) { accountModal(d.pwreset, true); return; }
   if (t.id === "btnAddC") { memberModal(null); return; }
   if (t.id === "btnAddM") { missionModal(null); return; }
@@ -1387,7 +1420,7 @@ document.addEventListener("click", async e => {
     guard(t, async () => {
       await q(sb.from("members").delete().eq("example", true));
       for (const m of state.missions.filter(x => x.example)) { try { await q(sb.from("missions").delete().eq("id", m.id)); } catch (_) {} }
-      const used = new Set(state.members.filter(m => !m.example).map(m => m.group_id));
+      const used = new Set(state.members.filter(m => !m.example).flatMap(memberGroups));
       const ids = state.groups.filter(g => g.example && !used.has(g.id)).map(g => g.id);
       if (ids.length) await q(sb.from("groups").delete().in("id", ids));
     }, "Exemples supprimés");

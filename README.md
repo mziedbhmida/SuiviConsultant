@@ -40,6 +40,7 @@ Crée d'abord le dépôt **vide** sur github.com (bouton *New repository*, nom `
 4. Exécute ensuite `supabase/migration_v2.sql` (missions, affectations, saisie au jour, gestion des admins).
    Puis `supabase/migration_v3.sql` (e-mail des consultants pour les rappels).
    Puis `supabase/migration_v4.sql` (création des comptes par un administrateur, sans e-mail).
+   Puis `supabase/migration_v5.sql` (un consultant peut appartenir à plusieurs groupes).
 5. *(Optionnel)* Pour avoir des données d'exemple, exécute `supabase/seed.sql`. Elles se suppriment ensuite en un clic dans l'application.
 6. Va dans **Project Settings → API** et copie :
    - **Project URL** ;
@@ -76,7 +77,7 @@ Dans Supabase, va dans **Authentication → URL Configuration** :
 2. Dans **Missions** : crée le catalogue (une mission « sans date de fin » pour les BUILD à l'année et les TMA). Les motifs d'absence « Congés / absence » et « Temps partiel » existent déjà.
 3. Dans **Administration** :
    - ajoute les autres administrateurs ;
-   - crée les groupes (ex. Pôle PA, Pôle BOARD, Pôle IA) ;
+   - crée les groupes (ex. Pôle PA, Pôle BOARD, Pôle IA). Un consultant peut appartenir à plusieurs groupes : coche-les dans sa fiche, ou utilise « Membres » sur un groupe ;
    - crée les profils des consultants ;
    - supprime les exemples.
 4. Dans **Mon planning**, choisis ton propre profil. Pour un administrateur, le rattachement est immédiat.
