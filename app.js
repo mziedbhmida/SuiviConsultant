@@ -301,7 +301,8 @@ function cellHtml(c, r, col, showFree) {
 }
 function legendHtml() { return `<div class="heat-legend"><span><i class="sw" style="background:var(--h-low)"></i>&lt; 50 %</span><span><i class="sw" style="background:var(--h-mid)"></i>50–85 %</span><span><i class="sw" style="background:var(--h-ok)"></i>85–100 % · cible</span><span><i class="sw" style="background:var(--h-over)"></i>&gt; 100 % · surcharge</span><span><i class="sw hatch"></i>Absent ou férié</span><span><i class="p" style="display:inline-block;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--t-avv)"></i>contient du probable</span></div>`; }
 function renderHeat(cols) {
-  const order = [...state.groups.map(g => g.id), ""];
+  // groupe filtré : une seule section (sinon un consultant de plusieurs groupes apparaîtrait plusieurs fois)
+  const order = state.group ? [state.group] : [...state.groups.map(g => g.id), ""];
   const byG = order.map(gid => ({ gid, list: state.consultants.filter(c => gid ? inGroup(c, gid) : !state.groups.some(g => inGroup(c, g.id))) })).filter(x => x.list.length);
   const rows = byG.map(({ gid, list }) => `${state.group ? "" : `<tr class="grp"><td colspan="${cols.length + 1}">${esc(gid ? groupName(gid) : "Sans groupe")} · ${list.length}</td></tr>`}` + list.map(c => {
     const f = freshness(c);
