@@ -369,7 +369,7 @@ function viewTeam() {
       <select class="sel" id="gSel" aria-label="Groupe"><option value="">Toute l'équipe (${state.members.length})</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${state.group === g.id ? "selected" : ""}>${esc(g.name)} (${state.members.filter(m => inGroup(m, g.id)).length})</option>`).join("")}</select>
       <div class="seg" role="group" aria-label="Horizon">${HORIZONS.map(h => `<button data-h="${h}" aria-pressed="${state.h === h}">${h === 3 ? "3 sem. · par jour" : h + " sem."}</button>`).join("")}</div>
       ${canOverview() ? `<label class="toggle"><input type="checkbox" id="optProb" ${state.prob ? "checked" : ""}> Inclure le probable</label>` : ""}</div>
-    <div class="controls"><span class="muted" style="font-size:.85rem">S${isoWeek(cols[0].t)} à S${isoWeek(last)}</span>${isAdmin() ? `<button class="btn small" id="btnRemind">✉ Envoyer un rappel</button>` : ""}</div></div>`;
+    <div class="controls"><span class="muted" style="font-size:.85rem">S${isoWeek(cols[0].t)} à S${isoWeek(last)}</span>${canOverview() ? `<button class="btn small" id="btnRemind">✉ Envoyer un rappel</button>` : ""}</div></div>`;
   if (!state.consultants.length) return bar + `<div class="panel state">Aucun consultant dans ce groupe.</div>`;
   return `${bar}${renderKpis(kpis())}<div class="grid2">${renderAlerts(alerts())}${renderChart(cols)}</div>${renderHeat(cols)}${renderFinderShell()}${renderAssignList()}`;
 }
@@ -1171,7 +1171,7 @@ function missionModal(id) {
   });
 }
 
-/* --- rappel par e-mail (ouvre la messagerie de l'administrateur, destinataires en Cci) --- */
+/* --- rappel par e-mail (admins, managers, directeurs de projet : ouvre leur messagerie, destinataires en Cci) --- */
 const hasEmailCol = () => state.members.some(x => "email" in x);
 const memberEmail = m => (m.email || m.user_email || "").trim();
 const firstName = n => String(n || "").trim().split(/\s+/)[0] || "";
@@ -1191,11 +1191,11 @@ function gapText(g) {
 }
 const mailto = (to, bcc, subject, body) => `mailto:${encodeURIComponent(to).replace(/%40/g, "@").replace(/%2C/g, ",")}?${bcc ? "bcc=" + bcc.map(x => encodeURIComponent(x).replace(/%40/g, "@")).join(",") + "&" : ""}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 function remindModal() {
-  if (!isAdmin()) return;
+  if (!canOverview()) return;
   const me = myMember(); const sign = me ? me.name : "";
   const url = location.origin + location.pathname;
   const list = state.consultants.map(m => ({ m, g: planGaps(m) })).sort((a, b) => (b.g.need - a.g.need) || a.m.name.localeCompare(b.m.name, "fr"));
-  const canEdit = hasEmailCol();
+  const canEdit = hasEmailCol() && isAdmin(); // seuls les admins modifient les profils
   const defBody = `Bonjour,\n\nPetit rappel : merci de compléter ton plan de charge sur les 3 prochaines semaines (missions, absences, jours libres), puis de cliquer sur « Confirmer le planning ».\n\n${url}\n\nMerci !\n${sign}`;
   openModal(`<form class="modal wide" id="rForm" aria-label="Envoyer un rappel">
     <h2>Rappel de mise à jour des plannings</h2>
