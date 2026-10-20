@@ -240,14 +240,6 @@ function alerts() {
     const who = new Set(state.assign.filter(a => a.mission_id === m.id && ids.has(a.member_id)).map(a => a.member_id));
     if (dd >= -7 && dd <= 14 && who.size) out.push({ lvl: "info", w: 1.2, t: `À confirmer : ${esc(missionLabel(m))}`, m: `Mission probable · démarrage ${frDate(st)} · ${who.size} consultant${who.size > 1 ? "s" : ""} affecté${who.size > 1 ? "s" : ""}` });
   }
-  if (isAdmin() && !state.group) {
-    for (const m of state.missions) {
-      if (m.active === false || m.type === "ABSENCE" || m.type === "INTERNE") continue;
-      if (missionEnd(m) < TODAY || (isFinite(missionStart(m)) && missionStart(m) > TODAY + 14 * DAY)) continue;
-      const used = state.assign.some(a => a.mission_id === m.id && aEnd(a) >= TODAY) || state.entries.some(e => e.mission_id === m.id && parse(e.day) >= TODAY);
-      if (!used) out.push({ lvl: "warn", w: 1.8, t: `Mission sans consultant : ${esc(missionLabel(m))}`, m: isFinite(missionStart(m)) && missionStart(m) > TODAY ? `Démarre le ${frDate(missionStart(m))}` : "En cours, personne n'y est affecté" });
-    }
-  }
   const stale = state.consultants.filter(c => { const f = freshness(c); return f.days == null || f.days > STALE_DAYS; });
   if (stale.length) out.push({ lvl: "warn", w: 1.5, t: `${stale.length} planning${stale.length > 1 ? "s" : ""} à relancer`, m: esc(stale.map(c => c.name).join(", ")) + ` · pas de confirmation depuis plus de ${STALE_DAYS} j` });
   if (CFG.SKILL_ALERTS) for (const sk of SKILLS) {
