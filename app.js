@@ -669,9 +669,8 @@ function matrixCell(mid, mon) {
   out.parts = list.map(x => ({ t: x.label + (x.prob ? " ?" : "") + (many ? ` (${frac(x.v, days)})` : ""), c: x.intl ? "sg-intl" : "sg-bill" }));
   if (abs > 0.01) out.parts.push({ t: `Off (${frac(abs, days)})`, c: "sg-off" });
   if (free >= 0.5) out.parts.push({ t: `Interco (${frac(free, days)})`, c: "sg-int" });
-  /* couleur de la case = ce qui domine la semaine : facturé (vert), interne (orange) ou interco (rouge) */
-  const billed = client;
-  out.cls = free >= 0.5 && free >= internal && free >= billed ? "interco" : internal >= 0.5 && internal >= billed ? "internal" : "ok";
+  /* le non facturé prime : interco (rouge) dès ½ journée, sinon interne / avant-vente (orange), sinon facturé (vert) */
+  out.cls = free >= 0.5 ? "interco" : internal >= 0.25 ? "internal" : "ok";
   out.prob = list.some(x => x.prob);
   return out;
 }
@@ -702,7 +701,7 @@ function viewMatrix() {
     <button class="btn" id="btnMxExport">Exporter (Excel)</button></div>
   <section class="panel"><div class="panel-head"><h2>Matrice de disponibilité</h2><span class="eyebrow">S${isoWeek(W[0])} à S${isoWeek(W[W.length - 1])} · par semaine</span></div>
     <div class="scroll"><table class="mx"><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>
-    <div class="mx-legend"><span><i style="background:var(--h-ok)"></i>Mission client (facturé)</span><span><i style="background:var(--h-low)"></i>Interne / avant-vente (non facturé)</span><span><i style="background:var(--h-over)"></i>Interco (non facturé)</span><span><i style="background:var(--off)"></i>Off (absence)</span><span><i class="lg-prob"></i>Contient du probable « ? »</span><span>(3/5) = 3 jours sur 5 ouvrés · la couleur suit ce qui domine la semaine</span></div>
+    <div class="mx-legend"><span><i style="background:var(--h-ok)"></i>Mission client (facturé)</span><span><i style="background:var(--h-low)"></i>Interne / avant-vente (non facturé)</span><span><i style="background:var(--h-over)"></i>Interco (non facturé)</span><span><i style="background:var(--off)"></i>Off (absence)</span><span><i class="lg-prob"></i>Contient du probable « ? »</span><span>(3/5) = 3 jours sur 5 ouvrés · une case est orange ou rouge dès qu'elle contient du non facturé</span></div>
   </section>`;
 }
 function exportMatrix() {
