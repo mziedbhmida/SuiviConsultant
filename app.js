@@ -642,13 +642,11 @@ function kindRows(mid, t, kind) {
 }
 
 /* ================= Matrice de disponibilité (admin) ================= */
-const DAILY_RATE = CFG.OPPORTUNITY_DAILY_RATE || 800;
-const MX_WEEKS = 8;
-const euro = v => Math.round(v).toLocaleString("fr-FR") + " €";
+const MX_WEEKS = 4;
 /* nom affiché du projet : le client, sauf pour l'interne où l'on garde le nom de la mission */
 function projectName(m) { const c = (m.client || "").trim(); return c && c.toLowerCase() !== "interne" ? c : m.name; }
 function frac(v, days) { const r = Math.round(v * 2) / 2; return `${String(r).replace(".", ",")}/${days}`; }
-function mxWeeks() { const s = monday(TODAY) + (state.mxOffset - 3) * 7 * DAY; return Array.from({ length: MX_WEEKS }, (_, i) => s + i * 7 * DAY); }
+function mxWeeks() { const s = monday(TODAY) + state.mxOffset * 7 * DAY; return Array.from({ length: MX_WEEKS }, (_, i) => s + i * 7 * DAY); }
 function matrixCell(mid, mon) {
   const segs = new Map(); let days = 0, abs = 0, free = 0, net = 0, client = 0;
   for (let i = 0; i < 5; i++) {
@@ -691,15 +689,14 @@ function viewMatrix() {
   const foot = `<tr class="gap"><th></th>${W.map(() => "<td></td>").join("")}</tr>
     <tr><th>Ressources en interco</th>${tot.map(t => `<td class="${t.free >= 0.5 ? "bad" : ""}">${t.days ? d1(t.free / t.days) : "–"}</td>`).join("")}</tr>
     <tr><th>% interco</th>${tot.map(t => `<td>${t.net ? Math.round(t.free / t.net * 100) + " %" : "–"}</td>`).join("")}</tr>
-    <tr><th>Taux de staffing client</th>${tot.map(t => `<td>${t.net ? Math.round(t.client / t.net * 100) + " %" : "–"}</td>`).join("")}</tr>
-    <tr><th>Coût d'opportunité</th>${tot.map(t => `<td class="${t.free >= 0.5 ? "bad" : ""}">${t.free >= 0.05 ? euro(t.free * DAILY_RATE) : "–"}</td>`).join("")}</tr>`;
+    <tr><th>Taux de staffing client</th>${tot.map(t => `<td>${t.net ? Math.round(t.client / t.net * 100) + " %" : "–"}</td>`).join("")}</tr>`;
   return `<div class="bar"><div class="controls">
       <select class="sel" id="gSel" aria-label="Groupe"><option value="">Toute l'équipe (${state.members.length})</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${state.group === g.id ? "selected" : ""}>${esc(g.name)} (${state.members.filter(m => inGroup(m, g.id)).length})</option>`).join("")}</select>
       <div class="navw"><button class="btn small" data-mxnav="-4" aria-label="4 semaines plus tôt">←</button><button class="btn small" data-mxnav="0">Aujourd'hui</button><button class="btn small" data-mxnav="4" aria-label="4 semaines plus tard">→</button></div></div>
     <button class="btn" id="btnMxExport">Exporter (Excel)</button></div>
   <section class="panel"><div class="panel-head"><h2>Matrice de disponibilité</h2><span class="eyebrow">S${isoWeek(W[0])} à S${isoWeek(W[W.length - 1])} · par semaine</span></div>
     <div class="scroll"><table class="mx"><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>
-    <div class="mx-legend"><span><i style="background:var(--h-ok)"></i>Staffé (ferme)</span><span><i style="background:var(--h-low)"></i>Contient du probable « ? »</span><span><i style="background:var(--h-over)"></i>Interco</span><span><i style="background:var(--off)"></i>Off (absence)</span><span>(3/5) = 3 jours sur 5 ouvrés · coût d'opportunité = jours d'interco × ${euro(DAILY_RATE)}</span></div>
+    <div class="mx-legend"><span><i style="background:var(--h-ok)"></i>Staffé (ferme)</span><span><i style="background:var(--h-low)"></i>Contient du probable « ? »</span><span><i style="background:var(--h-over)"></i>Interco</span><span><i style="background:var(--off)"></i>Off (absence)</span><span>(3/5) = 3 jours sur 5 ouvrés</span></div>
   </section>`;
 }
 function exportMatrix() {
@@ -711,7 +708,6 @@ function exportMatrix() {
   lines.push(["Ressources en interco", ...tot.map(t => t.days ? d1(t.free / t.days) : "")]);
   lines.push(["% interco", ...tot.map(t => t.net ? Math.round(t.free / t.net * 100) + " %" : "")]);
   lines.push(["Taux de staffing client", ...tot.map(t => t.net ? Math.round(t.client / t.net * 100) + " %" : "")]);
-  lines.push(["Coût d'opportunité (€)", ...tot.map(t => Math.round(t.free * DAILY_RATE))]);
   const csv = "\ufeff" + lines.map(l => l.map(cell).join(";")).join("\r\n");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   a.download = `Matrice-disponibilite_S${isoWeek(W[0])}-S${isoWeek(W[W.length - 1])}_${iso(TODAY)}.csv`;
@@ -1432,7 +1428,7 @@ document.addEventListener("click", async e => {
   if (t.id === "loginForgot") { forgotPw(); return; }
   if (d.tab) { state.tab = d.tab; if (d.tab === "moi") { state.planMember = null; state.planOffset = 0; } render(); return; }
   if (d.h) { state.h = +d.h; try { localStorage.setItem("pdc.h2", state.h); } catch (_) {} render(); return; }
-  if (d.mxnav !== undefined) { state.mxOffset = +d.mxnav === 0 ? 0 : Math.max(-9, Math.min(12, state.mxOffset + +d.mxnav)); render(); return; }
+  if (d.mxnav !== undefined) { state.mxOffset = +d.mxnav === 0 ? 0 : Math.max(-12, Math.min(24, state.mxOffset + +d.mxnav)); render(); return; }
   if (t.id === "btnMxExport") { exportMatrix(); return; }
   if (d.mf) { state.mFilter = d.mf; render(); return; }
   if (d.nav !== undefined) { state.planOffset = +d.nav === 0 ? 0 : state.planOffset + +d.nav; render(); return; }
