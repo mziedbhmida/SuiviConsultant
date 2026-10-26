@@ -19,7 +19,7 @@ body{margin:0}
   --accent:#2C47C9; --accent-ink:#FFFFFF;
   --t-build:#3550D6; --t-run:#0E8576; --t-avv:#C97A12; --t-int:#8A94A3; --t-abs:#B9C0CA;
   --h-low:#FBEBCF; --h-mid:#EDF0F4; --h-ok:#D8F0E1; --h-over:#F8D3CE; --h-over-ink:#9C2617; --h-low-ink:#7A4B06;
-  --good:#127A4A; --warn:#A6620A; --bad:#B42318;
+  --good:#127A4A; --warn:#A6620A; --bad:#B42318; --off:#EDE3FB; --off-ink:#5B2A9E;
   --f-display:"Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --f-body:"IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --f-mono:"IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -29,13 +29,13 @@ body{margin:0}
   --accent:#8399FF; --accent-ink:#0E1319;
   --t-build:#7D93FF; --t-run:#3DC0AE; --t-avv:#EFAA45; --t-int:#717C8C; --t-abs:#4A5563;
   --h-low:#3A2D14; --h-mid:#1D2630; --h-ok:#143326; --h-over:#47201B; --h-over-ink:#FF9E90; --h-low-ink:#F5C77A;
-  --good:#4CC98A; --warn:#F0AE4A; --bad:#FF8A7A; color-scheme:dark}}
+  --good:#4CC98A; --warn:#F0AE4A; --bad:#FF8A7A; --off:#2E2344; --off-ink:#CDB4FF; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0E1319; --surface:#161D25; --ink:#E5E9EF; --muted:#94A0AE; --line:#2A3440; --soft:#1D2630;
   --accent:#8399FF; --accent-ink:#0E1319;
   --t-build:#7D93FF; --t-run:#3DC0AE; --t-avv:#EFAA45; --t-int:#717C8C; --t-abs:#4A5563;
   --h-low:#3A2D14; --h-mid:#1D2630; --h-ok:#143326; --h-over:#47201B; --h-over-ink:#FF9E90; --h-low-ink:#F5C77A;
-  --good:#4CC98A; --warn:#F0AE4A; --bad:#FF8A7A; color-scheme:dark}
+  --good:#4CC98A; --warn:#F0AE4A; --bad:#FF8A7A; --off:#2E2344; --off-ink:#CDB4FF; color-scheme:dark}
 
 *{box-sizing:border-box}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.5}
@@ -277,6 +277,33 @@ label.f input,label.f select{border:1px solid var(--line);background:var(--bg);b
 details.adv summary{cursor:pointer;color:var(--accent);font-size:.86rem;font-weight:500;padding:2px 0}
 details.adv[open] summary{margin-bottom:12px}
 select.big{font-size:1rem;padding:10px!important}
+/* Matrice de disponibilité (admin) */
+.mx{border-collapse:separate;border-spacing:0;width:100%;font-size:.8rem}
+.mx th,.mx td{border-right:1px solid var(--line);border-bottom:1px solid var(--line);padding:6px 8px;text-align:center;vertical-align:middle}
+.mx thead th{background:var(--surface);color:var(--muted);font-weight:600;white-space:nowrap;font-size:.74rem}
+.mx thead tr.m th{color:var(--ink);font-size:.78rem}
+.mx thead th.now{color:var(--accent)}
+.mx .who{position:sticky;left:0;background:var(--surface);text-align:left;z-index:1;min-width:170px;white-space:nowrap}
+.mx .who button{all:unset;cursor:pointer;font-weight:600}
+.mx .who button:hover{text-decoration:underline}
+.mx .who button:focus-visible{outline:2px solid var(--accent)}
+.mx .who small{display:block;color:var(--muted);font-size:.72rem;font-weight:400}
+.mx td.cell{min-width:150px;max-width:230px;font-weight:600;line-height:1.35;font-size:.76rem}
+.mx td.ok{background:var(--h-ok);color:var(--good)}
+.mx td.prob{background:var(--h-low);color:var(--h-low-ink)}
+.mx td.interco{background:var(--h-over);color:var(--h-over-ink)}
+.mx td.off{background:var(--off);color:var(--off-ink)}
+.mx td.hol{background:repeating-linear-gradient(45deg,var(--soft) 0 4px,var(--surface) 4px 8px);color:var(--muted);font-weight:400}
+.mx td.empty{color:var(--muted);font-weight:400}
+.mx td.now{box-shadow:inset 0 0 0 2px var(--accent)}
+.mx .sg-int{color:var(--h-over-ink)} .mx .sg-off{color:var(--off-ink)} .mx .sg-prob{color:var(--h-low-ink)}
+.mx tfoot th{text-align:left;background:var(--soft);font-weight:600;position:sticky;left:0;z-index:1}
+.mx tfoot td{font-family:var(--f-mono);font-variant-numeric:tabular-nums;background:var(--soft)}
+.mx tfoot tr.gap td,.mx tfoot tr.gap th{background:transparent;border-right:0;padding:4px}
+.mx tfoot td.bad{color:var(--bad);font-weight:600}
+.mx-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.78rem;color:var(--muted)}
+.mx-legend span{display:inline-flex;gap:6px;align-items:center}
+.mx-legend i{width:14px;height:10px;border-radius:2px;display:inline-block}
 code{font-family:var(--f-mono);font-size:.9em;background:var(--soft);padding:1px 5px;border-radius:4px}
 </style>
 <script>try{var t=localStorage.getItem("pdc.theme");if(t==="dark"||t==="light")document.documentElement.setAttribute("data-theme",t)}catch(e){}</script>

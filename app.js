@@ -25,7 +25,7 @@ const HORIZONS = [3, 8, 12];
 
 const state = {
   tab: null, h: 3, prob: true, group: "", filter: "", mFilter: "actives",
-  planMember: null, planOffset: 0,
+  planMember: null, planOffset: 0, mxOffset: 0,
   me: { id: null, email: "", isAdmin: false },
   members: [], groups: [], claims: [], missions: [], assign: [], entries: [], status: {}, admins: [],
   consultants: [], loaded: false
@@ -641,6 +641,84 @@ function kindRows(mid, t, kind) {
   return rows;
 }
 
+/* ================= Matrice de disponibilité (admin) ================= */
+const DAILY_RATE = CFG.OPPORTUNITY_DAILY_RATE || 800;
+const MX_WEEKS = 8;
+const euro = v => Math.round(v).toLocaleString("fr-FR") + " €";
+/* nom affiché du projet : le client, sauf pour l'interne où l'on garde le nom de la mission */
+function projectName(m) { const c = (m.client || "").trim(); return c && c.toLowerCase() !== "interne" ? c : m.name; }
+function frac(v, days) { const r = Math.round(v * 2) / 2; return `${String(r).replace(".", ",")}/${days}`; }
+function mxWeeks() { const s = monday(TODAY) + (state.mxOffset - 3) * 7 * DAY; return Array.from({ length: MX_WEEKS }, (_, i) => s + i * 7 * DAY); }
+function matrixCell(mid, mon) {
+  const segs = new Map(); let days = 0, abs = 0, free = 0, net = 0, client = 0;
+  for (let i = 0; i < 5; i++) {
+    const t = mon + i * DAY; const r = dayCell(mid, t, true); if (!r) continue;
+    days++; abs += r.abs; free += r.free; net += r.net; client += r.BUILD + r.RUN;
+    for (const p of r.parts) {
+      if (p.m.type === "ABSENCE") continue;
+      const prob = p.m.status === "probable"; const key = projectName(p.m) + (prob ? "|p" : "");
+      const sg = segs.get(key) || { label: projectName(p.m), prob, v: 0 }; sg.v += p.pct / 100; segs.set(key, sg);
+    }
+  }
+  const list = [...segs.values()].filter(x => x.v >= 0.05).sort((a, b) => b.v - a.v);
+  const out = { days, abs, free, net, client, segs: list, cls: "ok", parts: [] };
+  if (!days) { out.cls = "hol"; out.parts = [{ t: "Férié" }]; return out; }
+  if (abs >= days - 0.01) { out.cls = "off"; out.parts = [{ t: "Off" }]; return out; }
+  if (!list.length && free > 0.01) { out.cls = "interco"; out.parts = [{ t: "Interco" }]; return out; }
+  const n = list.length + (abs > 0.01 ? 1 : 0) + (free >= 0.5 ? 1 : 0); const many = n > 1;
+  out.parts = list.map(x => ({ t: x.label + (x.prob ? " ?" : "") + (many ? ` (${frac(x.v, days)})` : ""), c: x.prob ? "sg-prob" : "" }));
+  if (abs > 0.01) out.parts.push({ t: `Off (${frac(abs, days)})`, c: "sg-off" });
+  if (free >= 0.5) out.parts.push({ t: `Interco (${frac(free, days)})`, c: "sg-int" });
+  out.cls = list.some(x => x.prob) ? "prob" : "ok";
+  return out;
+}
+function matrixData() {
+  const W = mxWeeks(); const people = state.consultants.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "fr"));
+  const rows = people.map(c => ({ c, cells: W.map(w => matrixCell(c.id, w)) }));
+  const tot = W.map((w, i) => { const t = { free: 0, net: 0, client: 0, days: 0 }; rows.forEach(r => { const x = r.cells[i]; t.free += x.free; t.net += x.net; t.client += x.client; t.days = Math.max(t.days, x.days); }); return t; });
+  return { W, rows, tot };
+}
+const capFirst = s => s.charAt(0).toUpperCase() + s.slice(1);
+const monthName = t => capFirst(new Date(t).toLocaleDateString("fr-FR", { month: "long", timeZone: "UTC" }));
+const wkRange = t => `${new Date(t).getUTCDate()} → ${new Date(t + 4 * DAY).getUTCDate()}`;
+function viewMatrix() {
+  if (!state.members.length) return `<div class="panel state"><h2>Aucun consultant</h2><p>Crée l'équipe dans l'administration pour voir la matrice.</p></div>`;
+  const { W, rows, tot } = matrixData(); const cur = monday(TODAY);
+  const head = `<tr class="m"><th class="who" rowspan="3">Consultant</th>${W.map(w => `<th class="${w === cur ? "now" : ""}">${monthName(w)}</th>`).join("")}</tr>
+    <tr>${W.map(w => `<th class="${w === cur ? "now" : ""}">S${isoWeek(w)}</th>`).join("")}</tr>
+    <tr>${W.map(w => `<th class="${w === cur ? "now" : ""}">${wkRange(w)}</th>`).join("")}</tr>`;
+  const body = rows.map(r => `<tr><th class="who" scope="row"><button data-plan="${esc(r.c.id)}">${esc(r.c.name)}</button><small>${esc(r.c.role || "")}</small></th>${r.cells.map((x, i) => `<td class="cell ${x.cls} ${W[i] === cur ? "now" : ""}">${x.parts.map(p => p.c ? `<span class="${p.c}">${esc(p.t)}</span>` : esc(p.t)).join(" / ")}</td>`).join("")}</tr>`).join("");
+  const foot = `<tr class="gap"><th></th>${W.map(() => "<td></td>").join("")}</tr>
+    <tr><th>Ressources en interco</th>${tot.map(t => `<td class="${t.free >= 0.5 ? "bad" : ""}">${t.days ? d1(t.free / t.days) : "–"}</td>`).join("")}</tr>
+    <tr><th>% interco</th>${tot.map(t => `<td>${t.net ? Math.round(t.free / t.net * 100) + " %" : "–"}</td>`).join("")}</tr>
+    <tr><th>Taux de staffing client</th>${tot.map(t => `<td>${t.net ? Math.round(t.client / t.net * 100) + " %" : "–"}</td>`).join("")}</tr>
+    <tr><th>Coût d'opportunité</th>${tot.map(t => `<td class="${t.free >= 0.5 ? "bad" : ""}">${t.free >= 0.05 ? euro(t.free * DAILY_RATE) : "–"}</td>`).join("")}</tr>`;
+  return `<div class="bar"><div class="controls">
+      <select class="sel" id="gSel" aria-label="Groupe"><option value="">Toute l'équipe (${state.members.length})</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${state.group === g.id ? "selected" : ""}>${esc(g.name)} (${state.members.filter(m => inGroup(m, g.id)).length})</option>`).join("")}</select>
+      <div class="navw"><button class="btn small" data-mxnav="-4" aria-label="4 semaines plus tôt">←</button><button class="btn small" data-mxnav="0">Aujourd'hui</button><button class="btn small" data-mxnav="4" aria-label="4 semaines plus tard">→</button></div></div>
+    <button class="btn" id="btnMxExport">Exporter (Excel)</button></div>
+  <section class="panel"><div class="panel-head"><h2>Matrice de disponibilité</h2><span class="eyebrow">S${isoWeek(W[0])} à S${isoWeek(W[W.length - 1])} · par semaine</span></div>
+    <div class="scroll"><table class="mx"><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>
+    <div class="mx-legend"><span><i style="background:var(--h-ok)"></i>Staffé (ferme)</span><span><i style="background:var(--h-low)"></i>Contient du probable « ? »</span><span><i style="background:var(--h-over)"></i>Interco</span><span><i style="background:var(--off)"></i>Off (absence)</span><span>(3/5) = 3 jours sur 5 ouvrés · coût d'opportunité = jours d'interco × ${euro(DAILY_RATE)}</span></div>
+  </section>`;
+}
+function exportMatrix() {
+  const { W, rows, tot } = matrixData();
+  const cell = v => `"${String(v).replace(/"/g, '""')}"`;
+  const lines = [["Consultant", ...W.map(w => `S${isoWeek(w)} (${frDate(w)} → ${frDate(w + 4 * DAY)})`)]];
+  rows.forEach(r => lines.push([r.c.name, ...r.cells.map(x => x.parts.map(p => p.t).join(" / "))]));
+  lines.push([]);
+  lines.push(["Ressources en interco", ...tot.map(t => t.days ? d1(t.free / t.days) : "")]);
+  lines.push(["% interco", ...tot.map(t => t.net ? Math.round(t.free / t.net * 100) + " %" : "")]);
+  lines.push(["Taux de staffing client", ...tot.map(t => t.net ? Math.round(t.client / t.net * 100) + " %" : "")]);
+  lines.push(["Coût d'opportunité (€)", ...tot.map(t => Math.round(t.free * DAILY_RATE))]);
+  const csv = "\ufeff" + lines.map(l => l.map(cell).join(";")).join("\r\n");
+  const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  a.download = `Matrice-disponibilite_S${isoWeek(W[0])}-S${isoWeek(W[W.length - 1])}_${iso(TODAY)}.csv`;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+  toast("Matrice exportée");
+}
+
 /* ================= vue Missions (admin) ================= */
 function viewMissions() {
   const f = state.mFilter;
@@ -773,7 +851,7 @@ function renderTabs() {
   const pc = isAdmin() ? state.claims.length : 0;
   const tabs = [["moi", "Mon planning"]];
   if (canOverview()) tabs.push(["equipe", "Équipe"]);
-  if (isAdmin()) tabs.push(["missions", "Missions"], ["admin", "Administration"]);
+  if (isAdmin()) tabs.push(["matrice", "Matrice"], ["missions", "Missions"], ["admin", "Administration"]);
   $("tabs").innerHTML = tabs.map(([k, l]) => `<button role="tab" data-tab="${k}" aria-selected="${state.tab === k}">${l}${k === "admin" && pc ? `<span class="count">${pc}</span>` : ""}</button>`).join("");
 }
 function renderChip() {
@@ -787,14 +865,14 @@ function render() {
   if (!state.loaded) { main().innerHTML = `<div class="state">Chargement du plan de charge…</div>`; return; }
   if (!state.tab) state.tab = canOverview() ? "equipe" : "moi";
   if (state.tab === "equipe" && !canOverview()) { state.tab = "moi"; state.planMember = null; }
-  if ((state.tab === "admin" || state.tab === "missions") && !isAdmin()) state.tab = "moi";
+  if ((state.tab === "admin" || state.tab === "missions" || state.tab === "matrice") && !isAdmin()) state.tab = "moi";
   if (!canOverview()) state.prob = true;
   if (state.group && !state.groups.some(g => g.id === state.group)) state.group = "";
   rebuild(); renderTabs(); renderChip();
   const ex = state.members.some(m => m.example) || state.missions.some(m => m.example); const ban = $("banner"); ban.hidden = !(ex && isAdmin());
   if (ex && isAdmin()) ban.innerHTML = `<div class="banner"><span><strong>Données d'exemple.</strong> Ces consultants et missions montrent l'outil. Crée tes missions et ton équipe, puis supprime-les.</span><button class="btn small danger" id="btnClearEx">Supprimer les exemples</button></div>`;
   const fs = document.activeElement && document.activeElement.id;
-  const views = { admin: viewAdmin, missions: viewMissions, moi: viewPlanning, equipe: viewTeam };
+  const views = { admin: viewAdmin, missions: viewMissions, matrice: viewMatrix, moi: viewPlanning, equipe: viewTeam };
   main().innerHTML = `<div class="stack">${(views[state.tab] || viewTeam)()}</div>`;
   renderFinderResults();
   if (fs) { const el = $(fs); if (el && el.focus) { el.focus(); if (el.type === "search" || el.type === "text") { const v = el.value; try { el.setSelectionRange(v.length, v.length); } catch (_) {} } } }
@@ -809,7 +887,7 @@ async function fetchAll(make) {
   return out;
 }
 async function loadAll() {
-  const from = iso(monday(TODAY) - 28 * DAY), to = iso(TODAY + 40 * 7 * DAY);
+  const from = iso(monday(TODAY) - 13 * 7 * DAY), to = iso(TODAY + 40 * 7 * DAY);
   const [g, m, c, mi, a, e, s] = await Promise.all([
     q(sb.from("groups").select("*").order("name")),
     q(sb.from("members").select("*").order("name")),
@@ -1354,6 +1432,8 @@ document.addEventListener("click", async e => {
   if (t.id === "loginForgot") { forgotPw(); return; }
   if (d.tab) { state.tab = d.tab; if (d.tab === "moi") { state.planMember = null; state.planOffset = 0; } render(); return; }
   if (d.h) { state.h = +d.h; try { localStorage.setItem("pdc.h2", state.h); } catch (_) {} render(); return; }
+  if (d.mxnav !== undefined) { state.mxOffset = +d.mxnav === 0 ? 0 : Math.max(-9, Math.min(12, state.mxOffset + +d.mxnav)); render(); return; }
+  if (t.id === "btnMxExport") { exportMatrix(); return; }
   if (d.mf) { state.mFilter = d.mf; render(); return; }
   if (d.nav !== undefined) { state.planOffset = +d.nav === 0 ? 0 : state.planOffset + +d.nav; render(); return; }
   if (d.day) { const mid = planTarget(); if (mid) dayModal(mid, +d.day); return; }
