@@ -647,33 +647,38 @@ const MX_WEEKS = 4;
 function projectName(m) { const c = (m.client || "").trim(); return c && c.toLowerCase() !== "interne" ? c : m.name; }
 function frac(v, days) { const r = Math.round(v * 2) / 2; return `${String(r).replace(".", ",")}/${days}`; }
 function mxWeeks() { const s = monday(TODAY) + state.mxOffset * 7 * DAY; return Array.from({ length: MX_WEEKS }, (_, i) => s + i * 7 * DAY); }
+const isInternalType = t => t === "INTERNE" || t === "AVV"; /* non facturé : interne et avant-vente */
 function matrixCell(mid, mon) {
-  const segs = new Map(); let days = 0, abs = 0, free = 0, net = 0, client = 0;
+  const segs = new Map(); let days = 0, abs = 0, free = 0, net = 0, client = 0, internal = 0;
   for (let i = 0; i < 5; i++) {
     const t = mon + i * DAY; const r = dayCell(mid, t, true); if (!r) continue;
-    days++; abs += r.abs; free += r.free; net += r.net; client += r.BUILD + r.RUN;
+    days++; abs += r.abs; free += r.free; net += r.net; client += r.BUILD + r.RUN; internal += r.AVV + r.INTERNE;
     for (const p of r.parts) {
       if (p.m.type === "ABSENCE") continue;
-      const prob = p.m.status === "probable"; const key = projectName(p.m) + (prob ? "|p" : "");
-      const sg = segs.get(key) || { label: projectName(p.m), prob, v: 0 }; sg.v += p.pct / 100; segs.set(key, sg);
+      const prob = p.m.status === "probable"; const intl = isInternalType(p.m.type);
+      const key = projectName(p.m) + (prob ? "|p" : "") + (intl ? "|i" : "");
+      const sg = segs.get(key) || { label: projectName(p.m), prob, intl, v: 0 }; sg.v += p.pct / 100; segs.set(key, sg);
     }
   }
   const list = [...segs.values()].filter(x => x.v >= 0.05).sort((a, b) => b.v - a.v);
-  const out = { days, abs, free, net, client, segs: list, cls: "ok", parts: [] };
+  const out = { days, abs, free, net, client, internal, segs: list, cls: "ok", prob: false, parts: [] };
   if (!days) { out.cls = "hol"; out.parts = [{ t: "Férié" }]; return out; }
   if (abs >= days - 0.01) { out.cls = "off"; out.parts = [{ t: "Off" }]; return out; }
   if (!list.length && free > 0.01) { out.cls = "interco"; out.parts = [{ t: "Interco" }]; return out; }
   const n = list.length + (abs > 0.01 ? 1 : 0) + (free >= 0.5 ? 1 : 0); const many = n > 1;
-  out.parts = list.map(x => ({ t: x.label + (x.prob ? " ?" : "") + (many ? ` (${frac(x.v, days)})` : ""), c: x.prob ? "sg-prob" : "" }));
+  out.parts = list.map(x => ({ t: x.label + (x.prob ? " ?" : "") + (many ? ` (${frac(x.v, days)})` : ""), c: x.intl ? "sg-intl" : "sg-bill" }));
   if (abs > 0.01) out.parts.push({ t: `Off (${frac(abs, days)})`, c: "sg-off" });
   if (free >= 0.5) out.parts.push({ t: `Interco (${frac(free, days)})`, c: "sg-int" });
-  out.cls = list.some(x => x.prob) ? "prob" : "ok";
+  /* couleur de la case = ce qui domine la semaine : facturé (vert), interne (orange) ou interco (rouge) */
+  const billed = client;
+  out.cls = free >= 0.5 && free >= internal && free >= billed ? "interco" : internal >= 0.5 && internal >= billed ? "internal" : "ok";
+  out.prob = list.some(x => x.prob);
   return out;
 }
 function matrixData() {
   const W = mxWeeks(); const people = state.consultants.slice().sort((a, b) => String(a.name).localeCompare(String(b.name), "fr"));
   const rows = people.map(c => ({ c, cells: W.map(w => matrixCell(c.id, w)) }));
-  const tot = W.map((w, i) => { const t = { free: 0, net: 0, client: 0, days: 0 }; rows.forEach(r => { const x = r.cells[i]; t.free += x.free; t.net += x.net; t.client += x.client; t.days = Math.max(t.days, x.days); }); return t; });
+  const tot = W.map((w, i) => { const t = { free: 0, net: 0, client: 0, internal: 0, days: 0 }; rows.forEach(r => { const x = r.cells[i]; t.free += x.free; t.net += x.net; t.client += x.client; t.internal += x.internal; t.days = Math.max(t.days, x.days); }); return t; });
   return { W, rows, tot };
 }
 const capFirst = s => s.charAt(0).toUpperCase() + s.slice(1);
@@ -685,10 +690,11 @@ function viewMatrix() {
   const head = `<tr class="m"><th class="who" rowspan="3">Consultant</th>${W.map(w => `<th class="${w === cur ? "now" : ""}">${monthName(w)}</th>`).join("")}</tr>
     <tr>${W.map(w => `<th class="${w === cur ? "now" : ""}">S${isoWeek(w)}</th>`).join("")}</tr>
     <tr>${W.map(w => `<th class="${w === cur ? "now" : ""}">${wkRange(w)}</th>`).join("")}</tr>`;
-  const body = rows.map(r => `<tr><th class="who" scope="row"><button data-plan="${esc(r.c.id)}">${esc(r.c.name)}</button><small>${esc(r.c.role || "")}</small></th>${r.cells.map((x, i) => `<td class="cell ${x.cls} ${W[i] === cur ? "now" : ""}">${x.parts.map(p => p.c ? `<span class="${p.c}">${esc(p.t)}</span>` : esc(p.t)).join(" / ")}</td>`).join("")}</tr>`).join("");
+  const body = rows.map(r => `<tr><th class="who" scope="row"><button data-plan="${esc(r.c.id)}">${esc(r.c.name)}</button><small>${esc(r.c.role || "")}</small></th>${r.cells.map((x, i) => `<td class="cell ${x.cls} ${x.prob ? "probable" : ""} ${W[i] === cur ? "now" : ""}"${x.prob ? ' title="Contient une mission probable"' : ""}>${x.parts.map(p => p.c ? `<span class="${p.c}">${esc(p.t)}</span>` : esc(p.t)).join(" / ")}</td>`).join("")}</tr>`).join("");
   const foot = `<tr class="gap"><th></th>${W.map(() => "<td></td>").join("")}</tr>
     <tr><th>Ressources en interco</th>${tot.map(t => `<td class="${t.free >= 0.5 ? "bad" : ""}">${t.days ? d1(t.free / t.days) : "–"}</td>`).join("")}</tr>
     <tr><th>% interco</th>${tot.map(t => `<td>${t.net ? Math.round(t.free / t.net * 100) + " %" : "–"}</td>`).join("")}</tr>
+    <tr><th>% interne / avant-vente</th>${tot.map(t => `<td class="${t.net && t.internal / t.net >= 0.2 ? "warnc" : ""}">${t.net ? Math.round(t.internal / t.net * 100) + " %" : "–"}</td>`).join("")}</tr>
     <tr><th>Taux de staffing client</th>${tot.map(t => `<td>${t.net ? Math.round(t.client / t.net * 100) + " %" : "–"}</td>`).join("")}</tr>`;
   return `<div class="bar"><div class="controls">
       <select class="sel" id="gSel" aria-label="Groupe"><option value="">Toute l'équipe (${state.members.length})</option>${state.groups.map(g => `<option value="${esc(g.id)}" ${state.group === g.id ? "selected" : ""}>${esc(g.name)} (${state.members.filter(m => inGroup(m, g.id)).length})</option>`).join("")}</select>
@@ -696,7 +702,7 @@ function viewMatrix() {
     <button class="btn" id="btnMxExport">Exporter (Excel)</button></div>
   <section class="panel"><div class="panel-head"><h2>Matrice de disponibilité</h2><span class="eyebrow">S${isoWeek(W[0])} à S${isoWeek(W[W.length - 1])} · par semaine</span></div>
     <div class="scroll"><table class="mx"><thead>${head}</thead><tbody>${body}</tbody><tfoot>${foot}</tfoot></table></div>
-    <div class="mx-legend"><span><i style="background:var(--h-ok)"></i>Staffé (ferme)</span><span><i style="background:var(--h-low)"></i>Contient du probable « ? »</span><span><i style="background:var(--h-over)"></i>Interco</span><span><i style="background:var(--off)"></i>Off (absence)</span><span>(3/5) = 3 jours sur 5 ouvrés</span></div>
+    <div class="mx-legend"><span><i style="background:var(--h-ok)"></i>Mission client (facturé)</span><span><i style="background:var(--h-low)"></i>Interne / avant-vente (non facturé)</span><span><i style="background:var(--h-over)"></i>Interco (non facturé)</span><span><i style="background:var(--off)"></i>Off (absence)</span><span><i class="lg-prob"></i>Contient du probable « ? »</span><span>(3/5) = 3 jours sur 5 ouvrés · la couleur suit ce qui domine la semaine</span></div>
   </section>`;
 }
 function exportMatrix() {
@@ -707,6 +713,7 @@ function exportMatrix() {
   lines.push([]);
   lines.push(["Ressources en interco", ...tot.map(t => t.days ? d1(t.free / t.days) : "")]);
   lines.push(["% interco", ...tot.map(t => t.net ? Math.round(t.free / t.net * 100) + " %" : "")]);
+  lines.push(["% interne / avant-vente", ...tot.map(t => t.net ? Math.round(t.internal / t.net * 100) + " %" : "")]);
   lines.push(["Taux de staffing client", ...tot.map(t => t.net ? Math.round(t.client / t.net * 100) + " %" : "")]);
   const csv = "\ufeff" + lines.map(l => l.map(cell).join(";")).join("\r\n");
   const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));

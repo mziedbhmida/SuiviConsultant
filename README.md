@@ -133,7 +133,7 @@ Ouvre ensuite <http://localhost:3000>. Pense à ajouter `http://localhost:3000` 
 ## Rôles
 
 - **Administrateur** (liste gérée dans l'onglet Administration) : missions (import et suppression en masse), équipe, groupes, administrateurs, modification de tous les plannings, et rappels par e-mail (bouton « ✉ Envoyer un rappel » de l'onglet Équipe, qui ouvre la messagerie avec le message prêt).
-  Il a aussi l'onglet **Matrice** : vue consolidée consultants × semaines (4 semaines à partir de la semaine en cours, flèches pour avancer ou reculer d'un mois) avec les noms des projets (ex. « CELIO (3/5) / PO (2/5) »), l'interco, le % d'interco et le taux de staffing client, exportable en CSV pour Excel.
+  Il a aussi l'onglet **Matrice** : vue consolidée consultants × semaines (4 semaines à partir de la semaine en cours, flèches pour avancer ou reculer d'un mois) avec les noms des projets (ex. « CELIO (3/5) / PO (2/5) »), l'interco, le % d'interco, le % interne / avant-vente et le taux de staffing client ; couleurs : vert = facturé, orange = interne / avant-vente, rouge = interco, violet = off, pointillés = probable, exportable en CSV pour Excel.
 - **Manager** : un consultant dont le rôle est « Manager » ou « Directeur de projet ». Il voit l'onglet Équipe (KPI, alertes, disponibilités) et consulte les plannings des autres en lecture seule.
 - **Collaborateur** : ne voit que l'onglet « Mon planning ».
 
