@@ -133,6 +133,7 @@ Ouvre ensuite <http://localhost:3000>. Pense à ajouter `http://localhost:3000` 
 ## Rôles
 
 - **Administrateur** (liste gérée dans l'onglet Administration) : missions (import et suppression en masse), équipe, groupes, administrateurs, modification de tous les plannings, et rappels par e-mail (bouton « ✉ Envoyer un rappel » de l'onglet Équipe, qui ouvre la messagerie avec le message prêt).
+  Il a aussi l'onglet **Matrice** : vue consolidée consultants × semaines avec les noms des projets (ex. « CELIO (3/5) / PO (2/5) »), l'interco, le % d'interco et le coût d'opportunité, exportable en CSV pour Excel. Le coût journalier utilisé (800 € par défaut) se règle en ajoutant `OPPORTUNITY_DAILY_RATE: 800,` dans `config.js`.
 - **Manager** : un consultant dont le rôle est « Manager » ou « Directeur de projet ». Il voit l'onglet Équipe (KPI, alertes, disponibilités) et consulte les plannings des autres en lecture seule.
 - **Collaborateur** : ne voit que l'onglet « Mon planning ».
 
