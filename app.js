@@ -865,7 +865,7 @@ function renderChip() {
 function render() {
   if (!state.me.id) return;
   if (!state.loaded) { main().innerHTML = `<div class="state">Chargement du plan de charge…</div>`; return; }
-  if (!state.tab) state.tab = canOverview() ? "equipe" : "moi";
+  if (!state.tab) state.tab = isAdmin() ? "matrice" : canOverview() ? "equipe" : "moi";
   if (state.tab === "equipe" && !canOverview()) { state.tab = "moi"; state.planMember = null; }
   if ((state.tab === "admin" || state.tab === "missions" || state.tab === "matrice") && !isAdmin()) state.tab = "moi";
   if (!canOverview()) state.prob = true;
